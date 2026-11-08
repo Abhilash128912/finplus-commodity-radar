@@ -22,6 +22,12 @@ class CommodityNTFYDispatcher:
         """
         Sends an actionable strike alert when a commodity breaks out of compression with 20/50 EMA confirmation.
         """
+        from datetime import datetime, timezone, timedelta
+        ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+        if not force and ist_now.weekday() >= 5: # Saturday/Sunday
+            logger.info("Weekend detected. Skipping MCX commodity alert.")
+            return False
+
         symbol = analysis.get("symbol", "UNKNOWN")
         directive = analysis.get("directive", "STANDBY")
         
