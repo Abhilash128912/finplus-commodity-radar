@@ -59,12 +59,16 @@ os.makedirs(FRONTEND_DIR, exist_ok=True)
 # Mount static folder
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def serve_dashboard():
     index_path = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return JSONResponse({"status": "ready", "message": "Frontend index.html initializing..."})
+
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health_check():
+    return {"status": "ok", "app": APP_NAME}
 
 @app.get("/floater")
 def serve_floater():
