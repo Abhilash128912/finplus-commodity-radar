@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinPlus+ Commodity Radar (MCX Mini & Petal)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #070b12;
+      color: #e2e8f0;
+      background-image: radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.06), transparent 45%);
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.80);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(16px);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .glass-card:hover {
+      border-color: rgba(245, 158, 11, 0.35);
+      box-shadow: 0 10px 25px -5px rgba(245, 158, 11, 0.1);
+    }
+    .pulse-dot {
+      animation: pulse-glow 2s infinite;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.85); }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-4 md:p-8">
+
+  <!-- Header -->
+  <header class="max-w-7xl w-full mx-auto flex flex-col md:flex-row items-center justify-between pb-6 border-b border-slate-800 gap-4">
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-2xl shadow-lg shadow-amber-500/10">
+        <i class="fa-solid fa-oil-well"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2.5">
+          <h1 class="text-2xl font-extrabold tracking-tight text-white flex items-center">
+            FinPlus<span class="text-amber-400">+</span>
+          </h1>
+          <span class="text-[11px] px-2.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/40 text-amber-300 font-mono font-bold">
+            APP-03 • MCX COMMODITY RADAR
+          </span>
+          <span class="text-[11px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 mono">
+            Port :8002
+          </span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">
+          Crude Oil Mini • Natural Gas Mini • Gold Petal | LuxAlgo 15m Compression + 20/50 EMA Sentry
+        </p>
+      </div>
+    </div>
+
+    <!-- Status & Cross Navigation -->
+    <div class="flex flex-wrap items-center gap-2.5">
+      <!-- Exchange Session Status -->
+      <div id="exchange-session-pill" class="text-xs mono font-bold px-3 py-1.5 rounded-xl border bg-slate-800/80 text-slate-400 border-slate-700">
+        <i class="fa-solid fa-clock mr-1"></i> <span id="session-status-text">INITIALIZING...</span>
+      </div>
+
+      <!-- Gateway Status -->
+      <div class="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs mono">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot" id="gateway-dot"></span>
+        <span class="text-slate-300 font-semibold" id="gateway-text">GATEWAY: ONLINE</span>
+        <span class="text-slate-500">|</span>
+        <span class="text-amber-400 font-bold" id="live-ist-clock">--:--:-- IST</span>
+      </div>
+
+      <!-- Cross App Shortcuts -->
+      <a href="http://127.0.0.1:8000" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition" title="Go to App #1: Index Breadth">
+        🏛️ Air Traffic (:8000)
+      </a>
+      <a href="http://127.0.0.1:8001" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition" title="Go to App #2: Stock Scanner">
+        ⚡ Stock Radar (:8001)
+      </a>
+
+      <!-- Quick Action Buttons -->
+      <button onclick="triggerScan()" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-xl transition shadow active:scale-95">
+        <i class="fa-solid fa-rotate mr-1"></i> Scan
+      </button>
+      <button onclick="triggerTestPulse()" class="bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs px-3 py-1.5 rounded-xl border border-amber-500/30 transition">
+        📲 Test Pulse
+      </button>
+      <button onclick="openFloater()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-2.5 py-1.5 rounded-xl border border-slate-700 transition" title="Pop Floating HUD">
+        <i class="fa-solid fa-up-right-from-square"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Macro Commodity Sentry Bar -->
+  <section class="max-w-7xl w-full mx-auto my-5">
+    <div class="glass-card rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 border border-amber-500/20">
+      <div class="flex items-center gap-3">
+        <div class="text-amber-400 text-lg"><i class="fa-solid fa-shield-halved"></i></div>
+        <div>
+          <div class="text-xs font-bold text-white uppercase tracking-wider mono flex items-center gap-2">
+            Institutional Macro Sentry & News Shield
+            <span class="text-[10px] px-2 py-0.5 rounded bg-amber-950 border border-amber-500/40 text-amber-300">AUTOMATIC PROTECTION</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5" id="sentry-summary">
+            Monitoring US NYMEX/COMEX open (18:00 IST), EIA Petroleum Report (Wed 20:00 IST) & EIA NatGas Storage (Thu 20:00 IST).
+          </p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 text-xs mono">
+        <!-- Crude EIA Status -->
+        <div class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800" id="crude-eia-pill">
+          <span class="text-slate-400">🛢️ EIA Crude:</span>
+          <span class="text-emerald-400 font-semibold" id="crude-eia-text">Clear</span>
+        </div>
+
+        <!-- NatGas EIA Status -->
+        <div class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800" id="natgas-eia-pill">
+          <span class="text-slate-400">⚡ EIA NatGas:</span>
+          <span class="text-emerald-400 font-semibold" id="natgas-eia-text">Clear</span>
+        </div>
+
+        <!-- US Trading Window Status -->
+        <div class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800">
+          <span class="text-slate-400">🇺🇸 Prime Window:</span>
+          <span class="text-amber-400 font-semibold" id="us-window-text">18:00 – 21:30 IST</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- #1 PRIORITY COMMODITY & EXPLICIT OPTION DIRECTIVE HERO CARD -->
+  <section class="max-w-7xl w-full mx-auto mb-6">
+    <div class="glass-card rounded-2xl p-6 border-2 border-amber-500/50 shadow-2xl relative overflow-hidden bg-gradient-to-r from-slate-950/95 via-amber-950/20 to-slate-950/95">
+      <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+        
+        <!-- Priority Left Column -->
+        <div class="flex-1">
+          <div class="flex items-center gap-2.5 mb-2">
+            <span class="text-xs px-2.5 py-1 rounded-xl bg-amber-500 text-slate-950 font-extrabold mono flex items-center gap-1.5 shadow-md">
+              <i class="fa-solid fa-crown"></i> #1 BEST TO TRADE TONIGHT
+            </span>
+            <span class="text-xs mono font-bold px-2.5 py-1 rounded-xl border bg-slate-900 text-amber-300 border-amber-500/30" id="priority-status-pill">
+              EVALUATING PRIORITY...
+            </span>
+          </div>
+
+          <div class="flex items-baseline gap-3 my-2">
+            <h2 class="text-2xl lg:text-3xl font-extrabold text-white tracking-tight" id="priority-asset-name">--</h2>
+            <span class="text-xl font-bold mono text-amber-400" id="priority-asset-price">₹--</span>
+            <span class="text-xs mono px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800" id="priority-lot-unit">--</span>
+          </div>
+
+          <p class="text-xs text-slate-400 max-w-xl leading-relaxed" id="priority-advice">
+            Analyzing 15m LuxAlgo compression band, 20/50 EMA trend alignment, and US session volume ignition across all 3 assets.
+          </p>
+        </div>
+
+        <!-- Priority Center: Futures Action vs Option Directive (CE / PE) -->
+        <div class="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+          <!-- Futures Directive -->
+          <div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 flex-1 min-w-[210px]">
+            <div class="text-[10px] mono text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>FUTURES DIRECTIVE</span>
+              <span class="text-slate-500">MCX MINI</span>
+            </div>
+            <div class="text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center bg-slate-950 border border-slate-800 text-slate-300" id="priority-futures-badge">
+              --
+            </div>
+            <div class="text-[11px] mono text-slate-400 mt-2 flex justify-between">
+              <span>Confluence:</span>
+              <span class="text-amber-400 font-bold" id="priority-score">-- / 100</span>
+            </div>
+          </div>
+
+          <!-- Commodity Option Directive (CE / PE) -->
+          <div class="bg-slate-900/90 rounded-2xl p-4 border border-amber-500/40 flex-1 min-w-[250px] shadow-lg shadow-amber-500/5">
+            <div class="text-[10px] mono text-amber-300 font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>OPTION DIRECTIVE (CE / PE)</span>
+              <span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-400 border border-amber-500/30">CONFIRMED</span>
+            </div>
+            <div class="text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center" id="priority-option-badge">
+              --
+            </div>
+            <div class="text-[10px] mono text-slate-400 mt-2 text-center" id="priority-option-sub">
+              Zero simultaneous CE/PE • Direction gated
+            </div>
+          </div>
+        </div>
+
+        <!-- Priority Right: Risk & Targets -->
+        <div class="bg-slate-950/80 rounded-2xl p-4 border border-slate-800/90 min-w-[220px] text-xs mono space-y-1.5 w-full lg:w-auto">
+          <div class="flex justify-between text-slate-400">
+            <span>Entry Trigger:</span>
+            <span class="text-white font-bold" id="priority-entry">₹--</span>
+          </div>
+          <div class="flex justify-between text-rose-400">
+            <span>Stop Loss:</span>
+            <span id="priority-sl">₹--</span>
+          </div>
+          <div class="flex justify-between text-emerald-400">
+            <span>Target 1 (1:1.5):</span>
+            <span id="priority-t1">₹--</span>
+          </div>
+          <div class="flex justify-between text-emerald-300">
+            <span>Target 2 (1:2.0):</span>
+            <span id="priority-t2">₹--</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 Dedicated Commodity Cards Grid -->
+  <main class="max-w-7xl w-full mx-auto flex-grow mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="commodity-cards-container">
+      
+      <!-- CARD 1: CRUDE OIL MINI -->
+      <div class="glass-card rounded-2xl p-6 flex flex-col justify-between border-t-2 border-t-amber-500 relative" id="card-CRUDEOILM">
+        <div>
+          <!-- Header -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🛢️</span>
+              <div>
+                <h3 class="text-base font-bold text-white">CRUDE OIL MINI</h3>
+                <span class="text-[10px] mono text-slate-400">10 Barrels • ₹10/pt</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 mono" id="crude-margin">Margin: ~₹22K</span>
+            </div>
+          </div>
+
+          <!-- Price & Move -->
+          <div class="flex items-baseline justify-between my-2">
+            <div class="text-2xl font-extrabold text-white mono" id="crude-price">₹--</div>
+            <div class="text-sm font-bold mono" id="crude-move">--%</div>
+          </div>
+
+          <!-- Directive Badge -->
+          <div class="my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider" id="crude-directive-badge">
+            INITIALIZING DIRECTIVE...
+          </div>
+
+          <!-- MCX Option Directive Box -->
+          <div class="mb-3 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] mono">
+            <div class="flex items-center justify-between text-slate-400 mb-1">
+              <span>MCX OPTION DIRECTIVE:</span>
+              <span class="text-[10px] text-amber-400 font-bold" id="crude-opt-strike">ATM --</span>
+            </div>
+            <div class="font-bold py-1.5 px-2 rounded-lg text-center text-xs" id="crude-opt-badge">
+              --
+            </div>
+          </div>
+
+          <!-- Confluence Score -->
+          <div class="bg-slate-900/70 rounded-xl p-3 border border-slate-800/80 mb-3">
+            <div class="flex items-center justify-between mb-1.5 text-xs">
+              <span class="text-slate-400">Confluence Score:</span>
+              <span class="mono font-bold text-amber-400" id="crude-score">-- / 100</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5 mb-2 overflow-hidden">
+              <div class="bg-amber-400 h-1.5 rounded-full transition-all duration-500" id="crude-score-bar" style="width: 0%"></div>
+            </div>
+            <div class="grid grid-cols-4 gap-1 text-[10px] mono text-slate-400 text-center pt-1 border-t border-slate-800">
+              <div><span class="text-slate-500">R:</span><span id="crude-pts-r">--</span></div>
+              <div><span class="text-slate-500">T:</span><span id="crude-pts-t">--</span></div>
+              <div><span class="text-slate-500">V:</span><span id="crude-pts-v">--</span></div>
+              <div><span class="text-slate-500">S:</span><span id="crude-pts-s">--</span></div>
+            </div>
+          </div>
+
+          <!-- Key Technical Levels -->
+          <div class="space-y-1.5 text-[11px] mono bg-slate-900/40 rounded-xl p-3 border border-slate-800/60 mb-3">
+            <div class="flex justify-between text-slate-400">
+              <span>Box Range (15m):</span>
+              <span class="text-white" id="crude-box">₹-- to ₹--</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>20 & 50 EMA:</span>
+              <span class="text-emerald-400" id="crude-emas">₹-- / ₹--</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Volume Conviction:</span>
+              <span class="text-slate-300" id="crude-vol">--x Avg</span>
+            </div>
+          </div>
+
+          <!-- Trade Execution Plan -->
+          <div class="bg-slate-950/60 rounded-xl p-3 border border-slate-800 text-xs mono space-y-1">
+            <div class="flex justify-between text-slate-400">
+              <span>Trigger Entry:</span>
+              <span class="text-white font-bold" id="crude-entry">--</span>
+            </div>
+            <div class="flex justify-between text-rose-400">
+              <span>Stop Loss:</span>
+              <span id="crude-sl">--</span>
+            </div>
+            <div class="flex justify-between text-emerald-400">
+              <span>Target 1 (1:1.5):</span>
+              <span id="crude-t1">--</span>
+            </div>
+            <div class="flex justify-between text-emerald-300">
+              <span>Target 2 (1:2.0):</span>
+              <span id="crude-t2">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guidance Note -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 leading-snug" id="crude-reason">
+          Awaiting market scan...
+        </div>
+      </div>
+
+      <!-- CARD 2: NATURAL GAS MINI -->
+      <div class="glass-card rounded-2xl p-6 flex flex-col justify-between border-t-2 border-t-cyan-500 relative" id="card-NATGASMINI">
+        <div>
+          <!-- Header -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">⚡</span>
+              <div>
+                <h3 class="text-base font-bold text-white">NATURAL GAS MINI</h3>
+                <span class="text-[10px] mono text-slate-400">250 mmBtu • ₹250/pt</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 mono" id="natgas-margin">Margin: ~₹28K</span>
+            </div>
+          </div>
+
+          <!-- Price & Move -->
+          <div class="flex items-baseline justify-between my-2">
+            <div class="text-2xl font-extrabold text-white mono" id="natgas-price">₹--</div>
+            <div class="text-sm font-bold mono" id="natgas-move">--%</div>
+          </div>
+
+          <!-- Directive Badge -->
+          <div class="my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider" id="natgas-directive-badge">
+            INITIALIZING DIRECTIVE...
+          </div>
+
+          <!-- MCX Option Directive Box -->
+          <div class="mb-3 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] mono">
+            <div class="flex items-center justify-between text-slate-400 mb-1">
+              <span>MCX OPTION DIRECTIVE:</span>
+              <span class="text-[10px] text-cyan-400 font-bold" id="natgas-opt-strike">ATM --</span>
+            </div>
+            <div class="font-bold py-1.5 px-2 rounded-lg text-center text-xs" id="natgas-opt-badge">
+              --
+            </div>
+          </div>
+
+          <!-- Confluence Score -->
+          <div class="bg-slate-900/70 rounded-xl p-3 border border-slate-800/80 mb-3">
+            <div class="flex items-center justify-between mb-1.5 text-xs">
+              <span class="text-slate-400">Confluence Score:</span>
+              <span class="mono font-bold text-cyan-400" id="natgas-score">-- / 100</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5 mb-2 overflow-hidden">
+              <div class="bg-cyan-400 h-1.5 rounded-full transition-all duration-500" id="natgas-score-bar" style="width: 0%"></div>
+            </div>
+            <div class="grid grid-cols-4 gap-1 text-[10px] mono text-slate-400 text-center pt-1 border-t border-slate-800">
+              <div><span class="text-slate-500">R:</span><span id="natgas-pts-r">--</span></div>
+              <div><span class="text-slate-500">T:</span><span id="natgas-pts-t">--</span></div>
+              <div><span class="text-slate-500">V:</span><span id="natgas-pts-v">--</span></div>
+              <div><span class="text-slate-500">S:</span><span id="natgas-pts-s">--</span></div>
+            </div>
+          </div>
+
+          <!-- Key Technical Levels -->
+          <div class="space-y-1.5 text-[11px] mono bg-slate-900/40 rounded-xl p-3 border border-slate-800/60 mb-3">
+            <div class="flex justify-between text-slate-400">
+              <span>Box Range (15m):</span>
+              <span class="text-white" id="natgas-box">₹-- to ₹--</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>20 & 50 EMA:</span>
+              <span class="text-cyan-400" id="natgas-emas">₹-- / ₹--</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Volume Conviction:</span>
+              <span class="text-slate-300" id="natgas-vol">--x Avg</span>
+            </div>
+          </div>
+
+          <!-- Trade Execution Plan -->
+          <div class="bg-slate-950/60 rounded-xl p-3 border border-slate-800 text-xs mono space-y-1">
+            <div class="flex justify-between text-slate-400">
+              <span>Trigger Entry:</span>
+              <span class="text-white font-bold" id="natgas-entry">--</span>
+            </div>
+            <div class="flex justify-between text-rose-400">
+              <span>Stop Loss:</span>
+              <span id="natgas-sl">--</span>
+            </div>
+            <div class="flex justify-between text-emerald-400">
+              <span>Target 1 (1:1.5):</span>
+              <span id="natgas-t1">--</span>
+            </div>
+            <div class="flex justify-between text-emerald-300">
+              <span>Target 2 (1:2.0):</span>
+              <span id="natgas-t2">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guidance Note -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 leading-snug" id="natgas-reason">
+          Awaiting market scan...
+        </div>
+      </div>
+
+      <!-- CARD 3: GOLD PETAL -->
+      <div class="glass-card rounded-2xl p-6 flex flex-col justify-between border-t-2 border-t-yellow-400 relative" id="card-GOLDPETAL">
+        <div>
+          <!-- Header -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🪙</span>
+              <div>
+                <h3 class="text-base font-bold text-white">GOLD PETAL</h3>
+                <span class="text-[10px] mono text-slate-400">1 Gram • ₹1/pt (Micro)</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-xs px-2 py-0.5 rounded bg-yellow-950/80 border border-yellow-500/40 text-yellow-300 mono" id="gold-margin">Margin: ~₹1K</span>
+            </div>
+          </div>
+
+          <!-- Price & Move -->
+          <div class="flex items-baseline justify-between my-2">
+            <div class="text-2xl font-extrabold text-white mono" id="gold-price">₹--</div>
+            <div class="text-sm font-bold mono" id="gold-move">--%</div>
+          </div>
+
+          <!-- Directive Badge -->
+          <div class="my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider" id="gold-directive-badge">
+            INITIALIZING DIRECTIVE...
+          </div>
+
+          <!-- MCX Option Directive Box -->
+          <div class="mb-3 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] mono">
+            <div class="flex items-center justify-between text-slate-400 mb-1">
+              <span>MCX OPTION DIRECTIVE:</span>
+              <span class="text-[10px] text-yellow-400 font-bold" id="gold-opt-strike">ATM --</span>
+            </div>
+            <div class="font-bold py-1.5 px-2 rounded-lg text-center text-xs" id="gold-opt-badge">
+              --
+            </div>
+          </div>
+
+          <!-- Confluence Score -->
+          <div class="bg-slate-900/70 rounded-xl p-3 border border-slate-800/80 mb-3">
+            <div class="flex items-center justify-between mb-1.5 text-xs">
+              <span class="text-slate-400">Confluence Score:</span>
+              <span class="mono font-bold text-yellow-400" id="gold-score">-- / 100</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5 mb-2 overflow-hidden">
+              <div class="bg-yellow-400 h-1.5 rounded-full transition-all duration-500" id="gold-score-bar" style="width: 0%"></div>
+            </div>
+            <div class="grid grid-cols-4 gap-1 text-[10px] mono text-slate-400 text-center pt-1 border-t border-slate-800">
+              <div><span class="text-slate-500">R:</span><span id="gold-pts-r">--</span></div>
+              <div><span class="text-slate-500">T:</span><span id="gold-pts-t">--</span></div>
+              <div><span class="text-slate-500">V:</span><span id="gold-pts-v">--</span></div>
+              <div><span class="text-slate-500">S:</span><span id="gold-pts-s">--</span></div>
+            </div>
+          </div>
+
+          <!-- Key Technical Levels -->
+          <div class="space-y-1.5 text-[11px] mono bg-slate-900/40 rounded-xl p-3 border border-slate-800/60 mb-3">
+            <div class="flex justify-between text-slate-400">
+              <span>Box Range (15m):</span>
+              <span class="text-white" id="gold-box">₹-- to ₹--</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>20 & 50 EMA:</span>
+              <span class="text-yellow-400" id="gold-emas">₹-- / ₹--</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Volume Conviction:</span>
+              <span class="text-slate-300" id="gold-vol">--x Avg</span>
+            </div>
+          </div>
+
+          <!-- Trade Execution Plan -->
+          <div class="bg-slate-950/60 rounded-xl p-3 border border-slate-800 text-xs mono space-y-1">
+            <div class="flex justify-between text-slate-400">
+              <span>Trigger Entry:</span>
+              <span class="text-white font-bold" id="gold-entry">--</span>
+            </div>
+            <div class="flex justify-between text-rose-400">
+              <span>Stop Loss:</span>
+              <span id="gold-sl">--</span>
+            </div>
+            <div class="flex justify-between text-emerald-400">
+              <span>Target 1 (1:1.5):</span>
+              <span id="gold-t1">--</span>
+            </div>
+            <div class="flex justify-between text-emerald-300">
+              <span>Target 2 (1:2.0):</span>
+              <span id="gold-t2">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guidance Note -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 leading-snug" id="gold-reason">
+          Awaiting market scan...
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Capital Allocation & Lot Sizing Helper -->
+  <section class="max-w-7xl w-full mx-auto mb-6">
+    <div class="glass-card rounded-2xl p-5 border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div>
+        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 mono flex items-center gap-2">
+          <i class="fa-solid fa-calculator text-amber-400"></i> Low-to-Moderate Capital Lot Sizing Matrix
+        </h4>
+        <p class="text-[11px] text-slate-400 mt-1">
+          Exact capital budgeting: Never risk more than 2% of account capital per trade.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4 text-xs mono text-center">
+        <div class="bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
+          <div class="text-amber-400 font-bold">CRUDE MINI</div>
+          <div class="text-slate-400 text-[10px] mt-0.5">1 Lot = 10 Bbl</div>
+          <div class="text-slate-300 font-semibold text-[11px]">~₹22K Margin</div>
+        </div>
+        <div class="bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
+          <div class="text-cyan-400 font-bold">NATGAS MINI</div>
+          <div class="text-slate-400 text-[10px] mt-0.5">1 Lot = 250 mmBtu</div>
+          <div class="text-slate-300 font-semibold text-[11px]">~₹28K Margin</div>
+        </div>
+        <div class="bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
+          <div class="text-yellow-400 font-bold">GOLD PETAL</div>
+          <div class="text-slate-400 text-[10px] mt-0.5">1 Lot = 1 Gram</div>
+          <div class="text-slate-300 font-semibold text-[11px]">~₹1K Margin</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="max-w-7xl w-full mx-auto pt-4 border-t border-slate-800 flex flex-col md:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+    <div>FinPlus+ Quantitative Trading Ecosystem • App #3: MCX Commodity Radar • Port :8002</div>
+    <div class="mono">Push Channel: <a href="https://ntfy.sh/Finplus-Commodity" target="_blank" class="text-amber-400 hover:underline">ntfy.sh/Finplus-Commodity</a></div>
+  </footer>
+
+  <script>
+    async function loadData() {
+      try {
+        const res = await fetch('/api/scan');
+        if (!res.ok) throw new Error("API network error");
+        const data = await res.json();
+        
+        // Update Live IST Clock & UTC
+        if (data.timestamp_ist) {
+          document.getElementById('live-ist-clock').textContent = data.timestamp_ist;
+        }
+
+        // Update Session Status
+        const session = data.session || {};
+        const sessionPill = document.getElementById('exchange-session-pill');
+        const sessionText = document.getElementById('session-status-text');
+        
+        sessionText.textContent = session.phase_label || "MCX ACTIVE";
+        sessionPill.className = `text-xs mono font-bold px-3 py-1.5 rounded-xl border ${session.badge_class || 'bg-slate-800 text-slate-400 border-slate-700'}`;
+
+        // Update EIA Shields
+        const crudeData = data.commodities?.CRUDEOILM;
+        const natgasData = data.commodities?.NATGASMINI;
+        const goldData = data.commodities?.GOLDPETAL;
+
+        if (crudeData?.eia_info) {
+          const cEia = crudeData.eia_info;
+          document.getElementById('crude-eia-text').textContent = cEia.status === 'SHIELD_ACTIVE' ? '🚨 SHIELD ACTIVE' : (cEia.status === 'UPCOMING' ? '⚠️ Due Soon' : 'Clear');
+          document.getElementById('crude-eia-pill').className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border ${cEia.badge_class || 'border-slate-800'}`;
+        }
+
+        if (natgasData?.eia_info) {
+          const nEia = natgasData.eia_info;
+          document.getElementById('natgas-eia-text').textContent = nEia.status === 'SHIELD_ACTIVE' ? '🚨 SHIELD ACTIVE' : (nEia.status === 'UPCOMING' ? '⚠️ Due Soon' : 'Clear');
+          document.getElementById('natgas-eia-pill').className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border ${nEia.badge_class || 'border-slate-800'}`;
+        }
+
+        // Render Top Priority Hero
+        if (data.priority_trade) {
+          renderPriorityHero(data.priority_trade);
+        }
+
+        // Render Individual Commodity Cards
+        renderAssetCard('crude', crudeData);
+        renderAssetCard('natgas', natgasData);
+        renderAssetCard('gold', goldData);
+
+      } catch (err) {
+        console.error("Error loading scan data:", err);
+      }
+    }
+
+    function renderPriorityHero(p) {
+      if (!p || !p.symbol) return;
+
+      document.getElementById('priority-asset-name').textContent = p.display_name || p.symbol;
+      document.getElementById('priority-asset-price').textContent = `₹${p.ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      document.getElementById('priority-lot-unit').textContent = p.lot_unit || '--';
+      
+      const sPill = document.getElementById('priority-status-pill');
+      sPill.textContent = p.priority_status || 'TOP WATCH';
+      if (p.priority_status.includes("ACTIVE")) {
+        sPill.className = "text-xs mono font-bold px-2.5 py-1 rounded-xl border bg-emerald-950 text-emerald-300 border-emerald-500/50 animate-pulse";
+      } else {
+        sPill.className = "text-xs mono font-bold px-2.5 py-1 rounded-xl border bg-slate-900 text-amber-300 border-amber-500/30";
+      }
+
+      document.getElementById('priority-advice').textContent = p.reason || '--';
+      document.getElementById('priority-score').textContent = `${p.confluence_score} / 100`;
+
+      // Futures Directive
+      const futBadge = document.getElementById('priority-futures-badge');
+      futBadge.textContent = p.futures_directive || 'STANDBY';
+      if (p.futures_directive.includes("BUY")) {
+        futBadge.className = "text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center bg-emerald-950 border border-emerald-500/60 text-emerald-300 animate-pulse";
+      } else if (p.futures_directive.includes("SELL")) {
+        futBadge.className = "text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center bg-rose-950 border border-rose-500/60 text-rose-300 animate-pulse";
+      } else {
+        futBadge.className = "text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center bg-slate-950 border border-slate-800 text-slate-400";
+      }
+
+      // Option Directive (CE / PE)
+      const opt = p.option_directive || {};
+      const optBadge = document.getElementById('priority-option-badge');
+      optBadge.textContent = opt.recommended_action || 'NONE';
+      optBadge.className = `text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center border ${opt.badge_class || 'bg-slate-950 border-slate-800 text-slate-400'}`;
+      
+      document.getElementById('priority-option-sub').textContent = opt.advice || 'Wait for confirmed breakout';
+
+      // Execution Plan
+      document.getElementById('priority-entry').textContent = p.entry_trigger ? `₹${p.entry_trigger.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+      document.getElementById('priority-sl').textContent = p.stop_loss ? `₹${p.stop_loss.toLocaleString('en-IN', {minimumFractionDigits: 2})} (-₹${p.risk_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById('priority-t1').textContent = p.target_1 ? `₹${p.target_1.toLocaleString('en-IN', {minimumFractionDigits: 2})} (+₹${p.gain_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById('priority-t2').textContent = p.target_2 ? `₹${p.target_2.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+    }
+
+    function renderAssetCard(prefix, item) {
+      if (!item) return;
+
+      // Price & Move
+      document.getElementById(`${prefix}-price`).textContent = `₹${item.ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      
+      const moveEl = document.getElementById(`${prefix}-move`);
+      const isUp = item.ltp >= item.box_mid;
+      moveEl.textContent = `${isUp ? '+' : ''}${item.box_width_pct}% Band`;
+      moveEl.className = `text-sm font-bold mono ${isUp ? 'text-emerald-400' : 'text-slate-400'}`;
+
+      // Directive Badge (Futures)
+      const badge = document.getElementById(`${prefix}-directive-badge`);
+      const dir = item.directive;
+      if (dir.includes("BUY")) {
+        badge.className = "my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider bg-emerald-950 border border-emerald-500/60 text-emerald-300 animate-pulse";
+        badge.innerHTML = `🟢 FUTURES: ${dir}`;
+      } else if (dir.includes("SELL")) {
+        badge.className = "my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider bg-rose-950 border border-rose-500/60 text-rose-300 animate-pulse";
+        badge.innerHTML = `🔴 FUTURES: ${dir}`;
+      } else if (dir.includes("EIA")) {
+        badge.className = "my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider bg-rose-950 border border-rose-500/60 text-rose-300";
+        badge.innerHTML = `🚨 ${dir}`;
+      } else {
+        badge.className = "my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider bg-slate-900 border border-slate-800 text-slate-400";
+        badge.innerHTML = `⏸️ FUTURES: ${dir}`;
+      }
+
+      // Option Directive (CE / PE)
+      const opt = item.option_directive || {};
+      document.getElementById(`${prefix}-opt-strike`).textContent = opt.strike_name || `ATM ₹${opt.strike_price || '--'}`;
+      const optBadge = document.getElementById(`${prefix}-opt-badge`);
+      optBadge.textContent = opt.recommended_action || 'NONE';
+      optBadge.className = `font-bold py-1.5 px-2 rounded-lg text-center text-xs border ${opt.badge_class || 'bg-slate-900 border-slate-800 text-slate-400'}`;
+
+      // Confluence Score
+      document.getElementById(`${prefix}-score`).textContent = `${item.confluence_score} / 100`;
+      document.getElementById(`${prefix}-score-bar`).style.width = `${item.confluence_score}%`;
+      
+      const bd = item.score_breakdown || {};
+      document.getElementById(`${prefix}-pts-r`).textContent = bd.compression_pts ?? '--';
+      document.getElementById(`${prefix}-pts-t`).textContent = bd.trend_pts ?? '--';
+      document.getElementById(`${prefix}-pts-v`).textContent = bd.volume_pts ?? '--';
+      document.getElementById(`${prefix}-pts-s`).textContent = bd.session_pts ?? '--';
+
+      // Levels
+      document.getElementById(`${prefix}-box`).textContent = `₹${item.box_bottom.toLocaleString('en-IN')} - ₹${item.box_top.toLocaleString('en-IN')}`;
+      document.getElementById(`${prefix}-emas`).textContent = `₹${item.ema20.toLocaleString('en-IN')} / ₹${item.ema50.toLocaleString('en-IN')}`;
+      document.getElementById(`${prefix}-vol`).textContent = `${item.vol_ratio}x Avg`;
+
+      // Execution Plan
+      document.getElementById(`${prefix}-entry`).textContent = item.entry_price ? `₹${item.entry_price.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+      document.getElementById(`${prefix}-sl`).textContent = item.stop_loss ? `₹${item.stop_loss.toLocaleString('en-IN', {minimumFractionDigits: 2})} (-₹${item.risk_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById(`${prefix}-t1`).textContent = item.target_1 ? `₹${item.target_1.toLocaleString('en-IN', {minimumFractionDigits: 2})} (+₹${item.gain_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById(`${prefix}-t2`).textContent = item.target_2 ? `₹${item.target_2.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+
+      // Reason
+      document.getElementById(`${prefix}-reason`).textContent = item.reason;
+    }
+
+    async function triggerScan() {
+      await fetch('/api/scan?force=true');
+      await loadData();
+    }
+
+    async function triggerTestPulse() {
+      try {
+        const res = await fetch('/api/trigger-pulse', { method: 'POST' });
+        const d = await res.json();
+        alert(`Test Pulse Triggered!\nTop Asset: ${d.top_asset} (Score: ${d.score}/100)\nAlert dispatched to ntfy.sh/Finplus-Commodity`);
+      } catch (err) {
+        alert("Error sending pulse: " + err);
+      }
+    }
+
+    function openFloater() {
+      window.open('/floater', 'FinPlusCommodityFloater', 'width=420,height=220,alwaysOnTop=yes,resizable=yes');
+    }
+
+    loadData();
+    setInterval(loadData, 15000); // Poll every 15s
+  </script>
+</body>
+</html>
+

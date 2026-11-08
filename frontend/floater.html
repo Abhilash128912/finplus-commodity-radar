@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinPlus+ Commodity Floater HUD</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Plus+Jakarta+Sans:wght@600;800&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #050811;
+      color: #e2e8f0;
+      user-select: none;
+      overflow: hidden;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="p-3 h-screen flex flex-col justify-between">
+
+  <!-- Top bar -->
+  <div class="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] mono">
+    <div class="flex items-center gap-1.5">
+      <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+      <span class="font-extrabold text-white">COMMODITY HUD</span>
+      <span class="text-amber-400 font-bold">:8002</span>
+    </div>
+    <div id="session-badge" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-bold">
+      SYNCING...
+    </div>
+  </div>
+
+  <!-- 3 Mini Rows -->
+  <div class="space-y-2 my-2 text-xs mono" id="hud-rows">
+    <!-- Crude -->
+    <div class="flex items-center justify-between bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+      <div class="flex items-center gap-2">
+        <span>🛢️</span>
+        <span class="font-bold text-white">CRUDE</span>
+      </div>
+      <div class="text-right">
+        <div class="font-bold text-amber-300" id="crude-hud-price">₹--</div>
+        <div class="text-[10px] text-slate-400" id="crude-hud-action">STANDBY</div>
+      </div>
+    </div>
+
+    <!-- NatGas -->
+    <div class="flex items-center justify-between bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+      <div class="flex items-center gap-2">
+        <span>⚡</span>
+        <span class="font-bold text-white">NATGAS</span>
+      </div>
+      <div class="text-right">
+        <div class="font-bold text-cyan-300" id="natgas-hud-price">₹--</div>
+        <div class="text-[10px] text-slate-400" id="natgas-hud-action">STANDBY</div>
+      </div>
+    </div>
+
+    <!-- Gold Petal -->
+    <div class="flex items-center justify-between bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+      <div class="flex items-center gap-2">
+        <span>🪙</span>
+        <span class="font-bold text-white">GOLD (1g)</span>
+      </div>
+      <div class="text-right">
+        <div class="font-bold text-yellow-300" id="gold-hud-price">₹--</div>
+        <div class="text-[10px] text-slate-400" id="gold-hud-action">STANDBY</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom clock -->
+  <div class="flex items-center justify-between pt-1 border-t border-slate-800 text-[10px] mono text-slate-500">
+    <span id="hud-clock">--:--:-- IST</span>
+    <a href="http://127.0.0.1:8002" target="_blank" class="text-amber-400 hover:underline">Full Cockpit ↗</a>
+  </div>
+
+  <script>
+    async function updateHUD() {
+      try {
+        const res = await fetch('/api/scan');
+        const data = await res.json();
+        
+        if (data.timestamp_ist) {
+          document.getElementById('hud-clock').textContent = data.timestamp_ist;
+        }
+
+        const session = data.session || {};
+        const sBadge = document.getElementById('session-badge');
+        sBadge.textContent = session.phase_label || "MCX";
+
+        const updateItem = (id, obj) => {
+          if (!obj) return;
+          document.getElementById(`${id}-hud-price`).textContent = `₹${obj.ltp.toLocaleString('en-IN', {minimumFractionDigits: 1, maximumFractionDigits: 1})}`;
+          const actionEl = document.getElementById(`${id}-hud-action`);
+          const opt = obj.option_directive || {};
+          
+          if (obj.directive.includes("BUY")) {
+            actionEl.textContent = opt.recommended_action ? opt.recommended_action : "BUY LONG";
+            actionEl.className = "text-[10px] font-bold text-emerald-400";
+          } else if (obj.directive.includes("SELL")) {
+            actionEl.textContent = opt.recommended_action ? opt.recommended_action : "SELL SHORT";
+            actionEl.className = "text-[10px] font-bold text-rose-400";
+          } else {
+            actionEl.textContent = "STANDBY (HOLD CASH)";
+            actionEl.className = "text-[10px] text-slate-400";
+          }
+        };
+
+        updateItem('crude', data.commodities?.CRUDEOILM);
+        updateItem('natgas', data.commodities?.NATGASMINI);
+        updateItem('gold', data.commodities?.GOLDPETAL);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    updateHUD();
+    setInterval(updateHUD, 10000);
+  </script>
+</body>
+</html>
+
