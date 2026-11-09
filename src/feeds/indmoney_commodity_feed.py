@@ -73,6 +73,7 @@ class INDMoneyCommodityFeed:
         self.auth_client = INDMoneyAuthClient()
         self._quote_cache: Dict[str, Any] = {}
         self._cache_time: float = 0.0
+        self._broker_cooldown_until: float = 0.0
         self._instruments_df: Optional[pd.DataFrame] = None
         
         # Load local instruments dump if available
@@ -101,7 +102,16 @@ class INDMoneyCommodityFeed:
         if not force and self._quote_cache and (now - self._cache_time) < self.cache_ttl:
             return self._quote_cache
 
-        headers = self._get_valid_headers()
+        if not force and now < self._broker_cooldown_until:
+            return self._quote_cache
+
+        try:
+            headers = self._get_valid_headers()
+        except Exception as e:
+            logger.warning(f"Failed to get INDstocks headers ({e}). Cooling down broker quotes for 120s.")
+            self._broker_cooldown_until = now + 120
+            return self._quote_cache
+
         formatted = {}
 
         for symbol, meta in ACTIVE_MCX_CONTRACTS.items():
@@ -109,12 +119,11 @@ class INDMoneyCommodityFeed:
             url = f"{self.BASE_URL}{self.QUOTES_ENDPOINT}?scrip-codes={scrip}"
             
             try:
-                resp = requests.get(url, headers=headers, timeout=5)
-                if resp.status_code in (401, 403):
-                    logger.warning(f"INDstocks token rejected (HTTP {resp.status_code}). Refreshing token via TOTP...")
-                    self.auth_client.generate_fresh_token()
-                    headers = self.auth_client.get_auth_headers()
-                    resp = requests.get(url, headers=headers, timeout=5)
+                resp = requests.get(url, headers=headers, timeout=2.0)
+                if resp.status_code in (401, 403, 429):
+                    logger.warning(f"INDstocks quote HTTP {resp.status_code}. Setting 120s cooldown and falling back.")
+                    self._broker_cooldown_until = now + 120
+                    break
 
                 if resp.status_code == 200:
                     payload = resp.json()

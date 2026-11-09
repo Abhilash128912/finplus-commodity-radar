@@ -1,23 +1,35 @@
 """
 FinPlus+ Commodity NTFY Alert Dispatcher
 Dispatches rich mobile alerts for MCX Mini/Petal breakouts, EIA shields, and square-off timers.
-Target: https://ntfy.sh/Finplus-Commodity
+Delivers redundancy to both Finplus-Delta and Finplus-Commodity topics.
+Target: https://ntfy.sh/Finplus-Delta, https://ntfy.sh/Finplus-Commodity
 """
 
+import os
 import time
 import requests
-from typing import Dict, Any, Optional
-from config.settings import NTFY_TOPIC, NTFY_SERVER
+from typing import Dict, Any, Optional, List
+from config.settings import NTFY_SERVER
 from src.utils.time_and_logger import setup_logger, get_ist_now
 
 logger = setup_logger("CommodityNTFY")
 
 RENDER_COMMODITY_URL = "https://finplus-commodity-radar.onrender.com"
+DEFAULT_TOPICS = ["Finplus-Delta", "Finplus-Commodity"]
 
 class CommodityNTFYDispatcher:
-    def __init__(self, topic: str = NTFY_TOPIC, server: str = NTFY_SERVER):
-        self.topic = topic
-        self.url = f"{server.rstrip('/')}/{topic}"
+    def __init__(self, topics: Optional[List[str]] = None, server: str = NTFY_SERVER):
+        env_topic = os.getenv("NTFY_TOPIC")
+        if env_topic:
+            self.topics = [env_topic.strip()]
+            if "Finplus-Delta" not in self.topics:
+                self.topics.append("Finplus-Delta")
+        elif topics:
+            self.topics = topics
+        else:
+            self.topics = DEFAULT_TOPICS
+
+        self.server = server.rstrip("/")
         self._last_alert_time: Dict[str, float] = {}
 
     def send_breakout_alert(self, analysis: Dict[str, Any], force: bool = False) -> bool:
@@ -55,7 +67,6 @@ class CommodityNTFYDispatcher:
         reason = analysis.get("reason", "")
         
         is_long = "LONG" in directive or "BUY" in directive
-        emoji = "🟢🚀" if is_long else "🔴⚡"
         action = "BUY LONG" if is_long else "SELL SHORT"
         
         opt = analysis.get("option_directive", {})
@@ -63,19 +74,28 @@ class CommodityNTFYDispatcher:
         
         title = f"{display_name}: {action} (Score: {score}/100)"
         
-        message = (
-            f"🎯 FUTURES DIRECTIVE: {action} ({lot_unit})\n"
-            f"🎫 OPTION STRIKE: {opt_str}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"• Entry Trigger: ₹{entry:,.2f}\n"
-            f"• Stop Loss: ₹{sl:,.2f} (-₹{risk_rs:,.0f}/lot)\n"
-            f"• Target 1 (1:1.5): ₹{t1:,.2f} (+₹{gain_rs:,.0f}/lot)\n"
-            f"• Target 2 (1:2.0): ₹{t2:,.2f}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"• Confluence: {score}/100 (LuxAlgo + 20/50 EMA + Vol)\n"
-            f"• Context: {reason}\n"
-            f"• Time: {get_ist_now().strftime('%I:%M:%S %p IST')}"
-        )
+        lines = [
+            f"## 🛢️ MCX COMMODITY BREAKOUT ALERT",
+            f"**{display_name} • {action}**",
+            "",
+            f"• **Futures Directive:** `{action}` ({lot_unit})",
+            f"• **Option Strike:** `{opt_str}`",
+            "",
+            f"### 🎯 TRADE EXECUTION PLAN",
+            f"• **Entry Trigger:** `₹{entry:,.2f}`",
+            f"• **Stop Loss:** `₹{sl:,.2f}` (-₹{risk_rs:,.0f}/lot)",
+            f"• **Target 1 (1:1.5):** `₹{t1:,.2f}` (+₹{gain_rs:,.0f}/lot)",
+            f"• **Target 2 (1:2.0):** `₹{t2:,.2f}`",
+            "",
+            f"• **Confluence:** `{score}/100` (LuxAlgo + 20/50 EMA + Volume)",
+            f"• **Setup:** {reason}",
+            f"• **Time:** {get_ist_now().strftime('%I:%M:%S %p IST')}",
+            "",
+            "---",
+            f"🌐 [Open Commodity Radar Cockpit]({RENDER_COMMODITY_URL})"
+        ]
+        
+        message = "\n".join(lines)
         
         headers = {
             "Title": title,
@@ -87,21 +107,24 @@ class CommodityNTFYDispatcher:
             "Actions": f"view, Open Commodity Radar, {RENDER_COMMODITY_URL}"
         }
         
-        try:
-            res = requests.post(self.url, data=message.encode("utf-8"), headers=headers, timeout=5)
-            if res.status_code == 200:
-                self._last_alert_time[symbol] = now
-                logger.info(f"NTFY alert successfully sent for {symbol}: {title}")
-                return True
-            else:
-                logger.warning(f"NTFY returned status {res.status_code}: {res.text}")
-        except Exception as e:
-            logger.error(f"Failed to post to NTFY ({self.url}): {e}")
-            
-        return False
+        any_success = False
+        for topic in self.topics:
+            url = f"{self.server}/{topic}"
+            try:
+                res = requests.post(url, data=message.encode("utf-8"), headers=headers, timeout=5)
+                if res.status_code == 200:
+                    self._last_alert_time[symbol] = now
+                    logger.info(f"NTFY alert successfully sent to '{topic}' for {symbol}: {title}")
+                    any_success = True
+                else:
+                    logger.warning(f"NTFY returned status {res.status_code} for '{topic}': {res.text}")
+            except Exception as e:
+                logger.error(f"Failed to post to NTFY ({url}): {e}")
+                
+        return any_success
 
     def send_system_pulse(self, message: str, title: str = "FinPlus+ Commodity Sentry") -> bool:
-        """Sends administrative / status pulse to NTFY."""
+        """Sends administrative / status pulse to NTFY across registered topics."""
         headers = {
             "Title": title,
             "Priority": "default",
@@ -111,10 +134,13 @@ class CommodityNTFYDispatcher:
             "Click": RENDER_COMMODITY_URL,
             "Actions": f"view, Open Commodity Radar, {RENDER_COMMODITY_URL}"
         }
-        try:
-            res = requests.post(self.url, data=message.encode("utf-8"), headers=headers, timeout=5)
-            return res.status_code == 200
-        except Exception as e:
-            logger.error(f"Failed to send system pulse to NTFY: {e}")
-            return False
-
+        any_success = False
+        for topic in self.topics:
+            url = f"{self.server}/{topic}"
+            try:
+                res = requests.post(url, data=message.encode("utf-8"), headers=headers, timeout=5)
+                if res.status_code == 200:
+                    any_success = True
+            except Exception as e:
+                logger.error(f"Failed to send system pulse to NTFY ({url}): {e}")
+        return any_success
