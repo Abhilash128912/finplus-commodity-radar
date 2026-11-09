@@ -12,6 +12,8 @@ from src.utils.time_and_logger import setup_logger, get_ist_now
 
 logger = setup_logger("CommodityNTFY")
 
+RENDER_COMMODITY_URL = "https://finplus-commodity-radar.onrender.com"
+
 class CommodityNTFYDispatcher:
     def __init__(self, topic: str = NTFY_TOPIC, server: str = NTFY_SERVER):
         self.topic = topic
@@ -59,7 +61,7 @@ class CommodityNTFYDispatcher:
         opt = analysis.get("option_directive", {})
         opt_str = opt.get("recommended_action", "NONE")
         
-        title = f"{emoji} {display_name}: {action} (Score: {score}/100)"
+        title = f"{display_name}: {action} (Score: {score}/100)"
         
         message = (
             f"🎯 FUTURES DIRECTIVE: {action} ({lot_unit})\n"
@@ -79,7 +81,10 @@ class CommodityNTFYDispatcher:
             "Title": title,
             "Priority": "high",
             "Tags": "chart_with_upwards_trend,moneybag" if is_long else "chart_with_downwards_trend,warning",
-            "Click": "http://127.0.0.1:8002"
+            "Markdown": "yes",
+            "X-Markdown": "yes",
+            "Click": RENDER_COMMODITY_URL,
+            "Actions": f"view, Open Commodity Radar, {RENDER_COMMODITY_URL}"
         }
         
         try:
@@ -101,7 +106,10 @@ class CommodityNTFYDispatcher:
             "Title": title,
             "Priority": "default",
             "Tags": "information_source,oil_drum",
-            "Click": "http://127.0.0.1:8002"
+            "Markdown": "yes",
+            "X-Markdown": "yes",
+            "Click": RENDER_COMMODITY_URL,
+            "Actions": f"view, Open Commodity Radar, {RENDER_COMMODITY_URL}"
         }
         try:
             res = requests.post(self.url, data=message.encode("utf-8"), headers=headers, timeout=5)
