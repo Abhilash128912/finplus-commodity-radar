@@ -55,6 +55,12 @@ class CommodityNTFYDispatcher:
                 logger.info(f"Skipping NTFY alert for {symbol} (rate-limited, sent < 30m ago)")
                 return False
 
+        # Active Weekday Hours: 09:00 AM to 11:55 PM (Midnight) IST
+        time_int = ist_now.hour * 100 + ist_now.minute
+        if not force and not (900 <= time_int <= 2355):
+            logger.info("Outside MCX 09:00 AM - 12:00 AM window. Skipping alert.")
+            return False
+
         display_name = analysis.get("display_name", symbol)
         lot_unit = analysis.get("lot_unit", "1 Lot")
         entry = analysis.get("entry_price", 0.0)
@@ -72,24 +78,16 @@ class CommodityNTFYDispatcher:
         opt = analysis.get("option_directive", {})
         opt_str = opt.get("recommended_action", "NONE")
         
-        title = f"{display_name}: {action} (Score: {score}/100)"
+        title = f"FinPlus MCX | {display_name} | {action}"
         
         lines = [
-            f"**FINPLUS+ MCX COMMODITY BREAKOUT**",
-            f"`{display_name} | {action}`",
-            "----------------------------------------",
-            f"• Futures Directive: `{action}` ({lot_unit})",
-            f"• Option Strike: `{opt_str}`",
-            "",
-            "**EXECUTION PARAMETERS**",
-            f"• Entry Trigger: Rs {entry:,.2f}",
-            f"• Stop Loss: Rs {sl:,.2f} (-Rs {risk_rs:,.0f}/lot)",
-            f"• Target 1 (1:1.5): Rs {t1:,.2f} (+Rs {gain_rs:,.0f}/lot)",
-            f"• Target 2 (1:2.0): Rs {t2:,.2f}",
-            f"• Confluence: {score}/100 (LuxAlgo + 20/50 EMA + Volume)",
-            f"• Setup: {reason}",
-            f"• Time: {get_ist_now().strftime('%I:%M:%S %p IST')}",
-            "----------------------------------------",
+            f"MCX Trade Alert | {display_name}",
+            f"Futures: [{action}] {lot_unit} @ Rs {entry:,.1f}",
+            f"Stop Loss: Rs {sl:,.1f} (-Rs {risk_rs:,.0f}/lot)",
+            f"Target 1: Rs {t1:,.1f} (+Rs {gain_rs:,.0f}/lot) | Target 2: Rs {t2:,.1f}",
+            f"Option Strike: {opt_str}",
+            f"Confluence: {score}/100 | {reason[:50]}",
+            f"Time: {get_ist_now().strftime('%I:%M %p IST')}",
             f"Cockpit: {RENDER_COMMODITY_URL}"
         ]
         
@@ -97,7 +95,7 @@ class CommodityNTFYDispatcher:
         
         headers = {
             "Title": title,
-            "Priority": "high",
+            "Priority": "4",
             "Markdown": "yes",
             "X-Markdown": "yes",
             "Click": RENDER_COMMODITY_URL,
