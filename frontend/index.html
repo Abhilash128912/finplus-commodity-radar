@@ -76,11 +76,11 @@
       </div>
 
       <!-- Cross App Shortcuts -->
-      <a href="http://127.0.0.1:8000" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition" title="Go to App #1: Index Breadth">
-        🏛️ Air Traffic (:8000)
+      <a id="nav-air-traffic-link" href="http://127.0.0.1:8000" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition" title="Go to App #1: Index Breadth">
+        Air Traffic
       </a>
-      <a href="http://127.0.0.1:8001" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition" title="Go to App #2: Stock Scanner">
-        ⚡ Stock Radar (:8001)
+      <a id="nav-stock-radar-link" href="http://127.0.0.1:8001" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition" title="Go to App #2: Stock Scanner">
+        Stock Radar
       </a>
 
       <!-- Quick Action Buttons -->
@@ -560,11 +560,23 @@
   </footer>
 
   <script>
+    // Host-aware cross app links
+    const isCloud = window.location.hostname.includes('render.com') || (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost');
+    const airLink = document.getElementById('nav-air-traffic-link');
+    const stockLink = document.getElementById('nav-stock-radar-link');
+    if (airLink) airLink.href = isCloud ? 'https://finplus-index-breadth.onrender.com' : 'http://127.0.0.1:8000';
+    if (stockLink) stockLink.href = isCloud ? 'https://finplus-stock-scanner.onrender.com' : 'http://127.0.0.1:8001';
+
     async function loadData() {
+      const gDot = document.getElementById('gateway-dot');
+      const gText = document.getElementById('gateway-text');
       try {
         const res = await fetch('/api/scan');
-        if (!res.ok) throw new Error("API network error");
+        if (!res.ok) throw new Error("API network error: " + res.status);
         const data = await res.json();
+        
+        if (gDot) gDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot';
+        if (gText) gText.textContent = 'GATEWAY: ONLINE';
         
         // Update Live IST Clock & UTC
         if (data.timestamp_ist) {
@@ -608,6 +620,11 @@
 
       } catch (err) {
         console.error("Error loading scan data:", err);
+        const gDot = document.getElementById('gateway-dot');
+        const gText = document.getElementById('gateway-text');
+        if (gDot) gDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+        if (gText) gText.textContent = 'RETRYING...';
+        setTimeout(loadData, 3000);
       }
     }
 

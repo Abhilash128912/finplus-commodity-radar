@@ -75,24 +75,22 @@ class CommodityNTFYDispatcher:
         title = f"{display_name}: {action} (Score: {score}/100)"
         
         lines = [
-            f"## 🛢️ MCX COMMODITY BREAKOUT ALERT",
-            f"**{display_name} • {action}**",
+            f"**FINPLUS+ MCX COMMODITY BREAKOUT**",
+            f"`{display_name} | {action}`",
+            "----------------------------------------",
+            f"• Futures Directive: `{action}` ({lot_unit})",
+            f"• Option Strike: `{opt_str}`",
             "",
-            f"• **Futures Directive:** `{action}` ({lot_unit})",
-            f"• **Option Strike:** `{opt_str}`",
-            "",
-            f"### 🎯 TRADE EXECUTION PLAN",
-            f"• **Entry Trigger:** `₹{entry:,.2f}`",
-            f"• **Stop Loss:** `₹{sl:,.2f}` (-₹{risk_rs:,.0f}/lot)",
-            f"• **Target 1 (1:1.5):** `₹{t1:,.2f}` (+₹{gain_rs:,.0f}/lot)",
-            f"• **Target 2 (1:2.0):** `₹{t2:,.2f}`",
-            "",
-            f"• **Confluence:** `{score}/100` (LuxAlgo + 20/50 EMA + Volume)",
-            f"• **Setup:** {reason}",
-            f"• **Time:** {get_ist_now().strftime('%I:%M:%S %p IST')}",
-            "",
-            "---",
-            f"🌐 [Open Commodity Radar Cockpit]({RENDER_COMMODITY_URL})"
+            "**EXECUTION PARAMETERS**",
+            f"• Entry Trigger: Rs {entry:,.2f}",
+            f"• Stop Loss: Rs {sl:,.2f} (-Rs {risk_rs:,.0f}/lot)",
+            f"• Target 1 (1:1.5): Rs {t1:,.2f} (+Rs {gain_rs:,.0f}/lot)",
+            f"• Target 2 (1:2.0): Rs {t2:,.2f}",
+            f"• Confluence: {score}/100 (LuxAlgo + 20/50 EMA + Volume)",
+            f"• Setup: {reason}",
+            f"• Time: {get_ist_now().strftime('%I:%M:%S %p IST')}",
+            "----------------------------------------",
+            f"Cockpit: {RENDER_COMMODITY_URL}"
         ]
         
         message = "\n".join(lines)
@@ -100,7 +98,6 @@ class CommodityNTFYDispatcher:
         headers = {
             "Title": title,
             "Priority": "high",
-            "Tags": "chart_with_upwards_trend,moneybag" if is_long else "chart_with_downwards_trend,warning",
             "Markdown": "yes",
             "X-Markdown": "yes",
             "Click": RENDER_COMMODITY_URL,
