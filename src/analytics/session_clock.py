@@ -20,6 +20,20 @@ class MCXSessionClock:
         
         is_weekend = weekday in (5, 6)
         
+        # Check Official Indian MCX Holiday Calendar
+        from src.utils.indian_market_calendar import is_mcx_market_open_ist
+        is_mcx_open, mcx_reason = is_mcx_market_open_ist()
+        if not is_mcx_open:
+            return {
+                "is_open": False,
+                "phase": "MCX_HOLIDAY_CLOSED",
+                "phase_label": "🏛️ MCX: CLOSED (HOLIDAY / OFF-HOURS)",
+                "trade_permission": False,
+                "badge_class": "bg-amber-950 text-amber-300 border-amber-500/50",
+                "guidance": mcx_reason,
+                "ist_time": now_dt.strftime("%I:%M:%S %p IST")
+            }
+
         if is_weekend:
             return {
                 "is_open": False,
