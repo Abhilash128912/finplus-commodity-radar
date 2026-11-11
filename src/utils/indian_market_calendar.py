@@ -74,3 +74,4 @@ def is_mcx_market_open_ist() -> Tuple[bool, str]:
         return False, f"MCX Off-Hours (Current: {curr_time.strftime('%H:%M:%S')}, Hours: 09:00 - 23:30 IST)"
 
     return True, "MCX Market Open"
+

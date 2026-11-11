@@ -163,12 +163,38 @@ class CommodityLuxAlgoEngine:
         gain_per_lot = 0.0
         
         # EIA News Shield Veto
+        # Pre-Ignition Launchpad Squeeze Gate for Commodities (Crude, NatGas, Gold)
+        dist_to_top_pct = round(((bx_top - last_close) / max(1.0, bx_top)) * 100.0, 2)
+        dist_to_bot_pct = round(((last_close - bx_bottom) / max(1.0, bx_bottom)) * 100.0, 2)
+        is_pre_ignition_long = (0.0 <= dist_to_top_pct <= 0.5) and bull_trend and session_info["is_open"]
+        is_pre_ignition_short = (0.0 <= dist_to_bot_pct <= 0.5) and bear_trend and session_info["is_open"]
+
         if eia_info["shield_active"]:
             directive = "PAUSED (EIA NEWS SHIELD)"
             reason = eia_info["message"]
         elif not session_info["is_open"]:
             directive = "STANDBY (MARKET CLOSED)"
             reason = session_info["guidance"]
+        elif is_pre_ignition_long:
+            directive = "⚡ PRE-IGNITION LAUNCHPAD (BUY CALL / LONG)"
+            reason = f"Coiled at Launchpad: Price ({last_close:,.1f}) is only {dist_to_top_pct}% below Box Top ({bx_top:,.1f}) with 20/50 EMA momentum."
+            entry_price = round(last_close, 2)
+            risk_pts = round(max(last_close * 0.006, last_close - bx_mid), 2)
+            stop_loss = round(entry_price - risk_pts, 2)
+            target_1 = round(entry_price + (risk_pts * RISK_REWARD_RATIO), 2)
+            target_2 = round(entry_price + (risk_pts * 2.5), 2)
+            risk_per_lot = round(risk_pts * rupee_mult, 2)
+            gain_per_lot = round((target_1 - entry_price) * rupee_mult, 2)
+        elif is_pre_ignition_short:
+            directive = "⚡ PRE-IGNITION LAUNCHPAD (BUY PUT / SHORT)"
+            reason = f"Coiled at Breakdown Edge: Price ({last_close:,.1f}) is only {dist_to_bot_pct}% above Box Bottom ({bx_bottom:,.1f}) with downward momentum."
+            entry_price = round(last_close, 2)
+            risk_pts = round(max(last_close * 0.006, bx_mid - last_close), 2)
+            stop_loss = round(entry_price + risk_pts, 2)
+            target_1 = round(entry_price - (risk_pts * RISK_REWARD_RATIO), 2)
+            target_2 = round(entry_price - (risk_pts * 2.5), 2)
+            risk_per_lot = round(risk_pts * rupee_mult, 2)
+            gain_per_lot = round((entry_price - target_1) * rupee_mult, 2)
         else:
             # Check Breakout Triggers
             if last_close > bx_top and bull_trend and vol_ratio >= 1.0:
