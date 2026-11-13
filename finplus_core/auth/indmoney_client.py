@@ -258,6 +258,11 @@ class INDMoneyAuthClient:
             logger.warning("Could not read shared config/.env: %s", e)
         return None
 
+    def force_refresh_token(self) -> str:
+        """Forces fresh token generation via headless TOTP regardless of held token timestamp."""
+        logger.info("Forcing fresh token generation via TOTP...")
+        return self.generate_fresh_token(persist_to_env=True)
+
     def get_valid_token(self, auto_refresh: bool = True) -> str:
         """
         Returns a verified active access token.
@@ -293,6 +298,15 @@ class INDMoneyAuthClient:
 
         try:
             resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code in (401, 403):
+                logger.warning("Profile check returned HTTP %s. Auto-refreshing session token via headless TOTP...", resp.status_code)
+                try:
+                    self.generate_fresh_token(persist_to_env=True)
+                    headers = self.get_auth_headers()
+                    resp = requests.get(url, headers=headers, timeout=10)
+                except Exception as ref_err:
+                    logger.error("Auto-refresh during profile check failed: %s", ref_err)
+
             if resp.status_code == 200:
                 payload = resp.json()
                 data = payload.get("data", {})
