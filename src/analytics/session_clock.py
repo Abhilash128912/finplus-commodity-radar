@@ -18,22 +18,8 @@ class MCXSessionClock:
         minute = now_dt.minute
         time_int = hour * 100 + minute
         
+        # 1. Weekend
         is_weekend = weekday in (5, 6)
-        
-        # Check Official Indian MCX Holiday Calendar
-        from src.utils.indian_market_calendar import is_mcx_market_open_ist
-        is_mcx_open, mcx_reason = is_mcx_market_open_ist()
-        if not is_mcx_open:
-            return {
-                "is_open": False,
-                "phase": "MCX_HOLIDAY_CLOSED",
-                "phase_label": "🏛️ MCX: CLOSED (HOLIDAY / OFF-HOURS)",
-                "trade_permission": False,
-                "badge_class": "bg-amber-950 text-amber-300 border-amber-500/50",
-                "guidance": mcx_reason,
-                "ist_time": now_dt.strftime("%I:%M:%S %p IST")
-            }
-
         if is_weekend:
             return {
                 "is_open": False,
@@ -44,8 +30,8 @@ class MCXSessionClock:
                 "guidance": "Commodity exchange closed for weekend. Next session opens Monday 09:00 AM IST.",
                 "ist_time": now_dt.strftime("%I:%M:%S %p IST")
             }
-            
-        # Overnight closure
+
+        # 2. Overnight closure
         if time_int < 900 or time_int >= 2330:
             return {
                 "is_open": False,
@@ -54,6 +40,30 @@ class MCXSessionClock:
                 "trade_permission": False,
                 "badge_class": "bg-slate-800 text-slate-400 border-slate-700",
                 "guidance": "Overnight session closed. MCX trading reopens at 09:00 AM IST.",
+                "ist_time": now_dt.strftime("%I:%M:%S %p IST")
+            }
+
+        # 3. Check Official Indian MCX Holiday Calendar
+        date_str = now_dt.strftime("%Y-%m-%d")
+        from src.utils.indian_market_calendar import MCX_FULL_DAY_HOLIDAYS, MCX_MORNING_CLOSED_HOLIDAYS
+        if date_str in MCX_FULL_DAY_HOLIDAYS:
+            return {
+                "is_open": False,
+                "phase": "MCX_HOLIDAY_CLOSED",
+                "phase_label": "🏛️ MCX: CLOSED (HOLIDAY)",
+                "trade_permission": False,
+                "badge_class": "bg-amber-950 text-amber-300 border-amber-500/50",
+                "guidance": f"MCX Full-Day Holiday ({MCX_FULL_DAY_HOLIDAYS[date_str]})",
+                "ist_time": now_dt.strftime("%I:%M:%S %p IST")
+            }
+        if date_str in MCX_MORNING_CLOSED_HOLIDAYS and time_int < 1700:
+            return {
+                "is_open": False,
+                "phase": "MCX_HOLIDAY_CLOSED",
+                "phase_label": "🏛️ MCX: CLOSED (MORNING HOLIDAY)",
+                "trade_permission": False,
+                "badge_class": "bg-amber-950 text-amber-300 border-amber-500/50",
+                "guidance": f"MCX Morning Session Holiday ({MCX_MORNING_CLOSED_HOLIDAYS[date_str]}). Evening opens 17:00 IST.",
                 "ist_time": now_dt.strftime("%I:%M:%S %p IST")
             }
             

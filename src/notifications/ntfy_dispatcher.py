@@ -32,6 +32,29 @@ class CommodityNTFYDispatcher:
         self.server = server.rstrip("/")
         self._last_alert_time: Dict[str, float] = {}
 
+    def _send_to_ntfy(self, topic: str, message: str, headers: Dict[str, str], timeout: int = 5) -> bool:
+        """Central shared send function for all NTFY dispatches in Commodity Radar."""
+        is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+        if not is_render:
+            now = time.time()
+            if now - getattr(self, "_last_suppress_log_ts", 0.0) >= 3600.0:
+                self._last_suppress_log_ts = now
+                logger.info("NTFY suppressed (not on Render)")
+            return False
+
+        url = f"{self.server}/{topic}"
+        try:
+            res = requests.post(url, data=message.encode("utf-8"), headers=headers, timeout=timeout)
+            if res.status_code == 200:
+                logger.info(f"NTFY alert successfully sent to '{topic}': {headers.get('Title', '')}")
+                return True
+            else:
+                logger.warning(f"NTFY returned status {res.status_code} for '{topic}': {res.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to post to NTFY ({url}): {e}")
+            return False
+
     def send_breakout_alert(self, analysis: Dict[str, Any], force: bool = False) -> bool:
         """
         Sends an actionable strike alert when a commodity breaks out of compression with 20/50 EMA confirmation.
@@ -104,17 +127,9 @@ class CommodityNTFYDispatcher:
         
         any_success = False
         for topic in self.topics:
-            url = f"{self.server}/{topic}"
-            try:
-                res = requests.post(url, data=message.encode("utf-8"), headers=headers, timeout=5)
-                if res.status_code == 200:
-                    self._last_alert_time[symbol] = now
-                    logger.info(f"NTFY alert successfully sent to '{topic}' for {symbol}: {title}")
-                    any_success = True
-                else:
-                    logger.warning(f"NTFY returned status {res.status_code} for '{topic}': {res.text}")
-            except Exception as e:
-                logger.error(f"Failed to post to NTFY ({url}): {e}")
+            if self._send_to_ntfy(topic, message, headers, timeout=5):
+                self._last_alert_time[symbol] = now
+                any_success = True
                 
         return any_success
 
@@ -131,11 +146,6 @@ class CommodityNTFYDispatcher:
         }
         any_success = False
         for topic in self.topics:
-            url = f"{self.server}/{topic}"
-            try:
-                res = requests.post(url, data=message.encode("utf-8"), headers=headers, timeout=5)
-                if res.status_code == 200:
-                    any_success = True
-            except Exception as e:
-                logger.error(f"Failed to send system pulse to NTFY ({url}): {e}")
+            if self._send_to_ntfy(topic, message, headers, timeout=5):
+                any_success = True
         return any_success
