@@ -32,9 +32,9 @@ logger = setup_logger("INDMoneyCommodityFeed")
 # Verified Active MCX Contract Security IDs on INDstocks
 ACTIVE_MCX_CONTRACTS = {
     "CRUDEOILM": {
-        "security_id": "573423",
-        "scrip_code": "MCX_573423",
-        "trading_symbol": "CRUDEOILM 19 Nov Fut",
+        "security_id": "576265",
+        "scrip_code": "MCX_576265",
+        "trading_symbol": "CRUDEOILM 18 Dec Fut",
         "lot_size": 10,
         "tick_size": 1.0,
         "rupee_multiplier": 10.0,
@@ -42,9 +42,9 @@ ACTIVE_MCX_CONTRACTS = {
         "display_name": "Crude Oil Mini"
     },
     "NATGASMINI": {
-        "security_id": "574320",
-        "scrip_code": "MCX_574320",
-        "trading_symbol": "NATGASMINI 24 Nov Fut",
+        "security_id": "578250",
+        "scrip_code": "MCX_578250",
+        "trading_symbol": "NATGASMINI 28 Dec Fut",
         "lot_size": 250,
         "tick_size": 0.10,
         "rupee_multiplier": 250.0,
@@ -82,8 +82,30 @@ class INDMoneyCommodityFeed:
             try:
                 self._instruments_df = pd.read_csv(dump_path, low_memory=False)
                 logger.info(f"Loaded {len(self._instruments_df)} MCX instruments from local INDstocks registry.")
+                self._resolve_active_front_month_contracts()
             except Exception as e:
                 logger.warning(f"Could not load local instruments dump: {e}")
+
+    def _resolve_active_front_month_contracts(self) -> None:
+        """Automatically rolls over ACTIVE_MCX_CONTRACTS to the nearest non-expired Fut contract."""
+        if self._instruments_df is None or self._instruments_df.empty:
+            return
+        try:
+            df = self._instruments_df
+            futs = df[df["TRADING_SYMBOL"].astype(str).str.endswith(" Fut", na=False)].copy()
+            futs["exp_dt"] = pd.to_datetime(futs["EXPIRY_DATE"], errors="coerce")
+            today_str = time.strftime("%Y-%m-%d")
+            futs = futs[futs["exp_dt"] >= today_str].sort_values("exp_dt")
+            for sym in list(ACTIVE_MCX_CONTRACTS.keys()):
+                matches = futs[futs["TRADING_SYMBOL"].astype(str).str.startswith(f"{sym} ", na=False)]
+                if not matches.empty:
+                    row = matches.iloc[0]
+                    sec_id = str(int(row["SECURITY_ID"])) if str(row["SECURITY_ID"]).isdigit() else str(row["SECURITY_ID"])
+                    ACTIVE_MCX_CONTRACTS[sym]["security_id"] = sec_id
+                    ACTIVE_MCX_CONTRACTS[sym]["scrip_code"] = f"MCX_{sec_id}"
+                    ACTIVE_MCX_CONTRACTS[sym]["trading_symbol"] = str(row["TRADING_SYMBOL"])
+        except Exception as e:
+            logger.warning(f"Could not auto-resolve front-month MCX contracts: {e}")
 
     def _get_valid_headers(self) -> Dict[str, str]:
         """Gets valid authorization headers, refreshing token with TOTP if needed."""
