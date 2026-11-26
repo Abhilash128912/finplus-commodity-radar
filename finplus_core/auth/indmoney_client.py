@@ -387,15 +387,52 @@ class INDMoneyAuthClient:
             logger.warning("Could not read shared config/.env: %s", e)
         return None
 
+    def _fetch_token_from_master(self) -> Optional[str]:
+        """Fetches the active INDstocks token from Auth Master (local :8001 or Render) to avoid duplicate /generate/token calls."""
+        if os.getenv("FINPLUS_ENV") == "test":
+            return None
+
+        admin_token = os.getenv("ADMIN_TOKEN") or "finplus-admin-secret-2026"
+        candidates = []
+        env_master = os.getenv("AUTH_MASTER_URL") or os.getenv("STOCK_SCANNER_URL")
+        if env_master:
+            candidates.append(env_master.rstrip("/"))
+        candidates.extend([
+            "http://127.0.0.1:8001",
+            "https://finplus-stock-scanner.onrender.com",
+        ])
+
+        for base_url in candidates:
+            url = f"{base_url}/api/auth/token"
+            try:
+                resp = requests.get(
+                    url,
+                    headers={"Authorization": f"Bearer {admin_token}", "Accept": "application/json"},
+                    timeout=5.0,
+                )
+                if resp.status_code == 200:
+                    tok = (resp.json().get("token") or "").strip()
+                    if tok:
+                        self.access_token = tok
+                        self._save_token_to_file(tok)
+                        logger.info("Synchronized active INDstocks token from Auth Master (%s).", base_url)
+                        return tok
+            except Exception as e:
+                logger.debug("Auth Master unreachable at %s: %s", base_url, e)
+        return None
+
     def force_refresh_token(self) -> str:
-        """Forces fresh token generation via headless TOTP regardless of held token timestamp."""
+        """Fetches fresh token from Auth Master first, falling back to local TOTP generation."""
+        master_tok = self._fetch_token_from_master()
+        if master_tok:
+            return master_tok
         logger.info("Forcing fresh token generation via TOTP...")
         return self.generate_fresh_token(persist_to_env=True)
 
     def get_valid_token(self, auto_refresh: bool = True) -> str:
         """
         Returns a verified active access token.
-        Always synchronizes with shared token file and config/.env to avoid concurrent generation conflicts.
+        Always synchronizes with shared token file, config/.env, and Auth Master to avoid concurrent generation conflicts.
         """
         self._load_token_from_file()
         self._reload_token_from_env()
@@ -404,6 +441,9 @@ class INDMoneyAuthClient:
             return self.access_token
 
         if auto_refresh:
+            master_tok = self._fetch_token_from_master()
+            if master_tok:
+                return master_tok
             logger.info("Current token expired or expiring soon. Refreshing via TOTP...")
             return self.generate_fresh_token()
 
