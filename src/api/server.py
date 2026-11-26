@@ -15,11 +15,12 @@ if _RADAR_DIR not in sys.path:
     sys.path.insert(0, _RADAR_DIR)
 
 from contextlib import asynccontextmanager
+import time
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from config.settings import APP_NAME, APP_CODE, SERVER_PORT, NTFY_TOPIC
 from src.scheduler.commodity_scheduler import CommodityScheduler
@@ -29,24 +30,43 @@ from src.utils.time_and_logger import setup_logger, get_utc_iso, get_ist_now
 
 logger = setup_logger("CommodityServer")
 
-# Global scheduler instance
-scheduler = CommodityScheduler()
+# Lazy/safe global scheduler instance (avoid import-time crash when INDMONEY_* env vars are absent)
+scheduler: Optional[CommodityScheduler] = None
+_scheduler_init_error: Optional[str] = None
+
+
+def get_scheduler() -> Optional[CommodityScheduler]:
+    global scheduler, _scheduler_init_error
+    if scheduler is not None:
+        return scheduler
+    try:
+        scheduler = CommodityScheduler()
+        _scheduler_init_error = None
+    except Exception as e:
+        _scheduler_init_error = str(e)
+        logger.warning(f"CommodityScheduler initialization unavailable: {e}")
+    return scheduler
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {APP_NAME} ({APP_CODE}) on port {SERVER_PORT}...")
-    # Start scheduler daemon
-    scheduler.start_background_loop(interval_seconds=60)
+    sched = get_scheduler()
+    if sched is not None:
+        sched.start_background_loop(interval_seconds=60)
+    else:
+        logger.warning(f"Background scheduler not started: {_scheduler_init_error}")
     yield
     logger.info("Shutting down Commodity Radar...")
-    scheduler.stop()
+    if scheduler is not None:
+        scheduler.stop()
 
 app = FastAPI(title=APP_NAME, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -80,6 +100,23 @@ def serve_floater():
 @app.get("/api/status")
 def get_system_status() -> Dict[str, Any]:
     session = MCXSessionClock.get_session_info()
+    sched = get_scheduler()
+    if sched is None:
+        gateway_status = f"GATEWAY: DEGRADED ({_scheduler_init_error or 'SCHEDULER UNAVAILABLE'})"
+    else:
+        auth_client = getattr(getattr(sched, "ind_feed", None), "auth_client", None)
+        cooldown_until = getattr(getattr(sched, "ind_feed", None), "_broker_cooldown_until", 0.0)
+        if auth_client is None:
+            gateway_status = "GATEWAY: DEGRADED (AUTH CLIENT UNAVAILABLE)"
+        elif time.time() < cooldown_until:
+            gateway_status = "GATEWAY: COOLDOWN (INDSTOCKS RATE/AUTH BACKOFF)"
+        elif auth_client.is_token_valid():
+            gateway_status = "GATEWAY: ONLINE (INDSTOCKS MCX AUTHENTICATED)"
+        elif auth_client.access_token:
+            gateway_status = "GATEWAY: TOKEN EXPIRED (REFRESH REQUIRED)"
+        else:
+            gateway_status = "GATEWAY: UNAUTHENTICATED (NO ACTIVE TOKEN)"
+
     return {
         "app_name": APP_NAME,
         "app_code": APP_CODE,
@@ -87,7 +124,7 @@ def get_system_status() -> Dict[str, Any]:
         "status": "ONLINE",
         "exchange_session": session["phase_label"],
         "exchange_open": session["is_open"],
-        "gateway_status": "GATEWAY: ONLINE (INDSTOCKS MCX AUTHENTICATED)",
+        "gateway_status": gateway_status,
         "utc_time": get_utc_iso(),
         "ist_time": get_ist_now().strftime("%I:%M:%S %p IST"),
         "ntfy_topic": f"https://ntfy.sh/{NTFY_TOPIC}"
@@ -95,9 +132,15 @@ def get_system_status() -> Dict[str, Any]:
 
 @app.get("/api/scan")
 def get_latest_scan(force: bool = False) -> Dict[str, Any]:
-    if force or not scheduler.latest_scan_results:
-        return scheduler.run_full_scan()
-    return scheduler.latest_scan_results
+    sched = get_scheduler()
+    if sched is None:
+        raise HTTPException(status_code=503, detail=f"Scheduler unavailable: {_scheduler_init_error}")
+    if force:
+        return sched.run_full_scan()
+    latest = sched.get_latest_scan_results()
+    if not latest:
+        return sched.run_full_scan()
+    return latest
 
 @app.get("/api/eia-shield")
 def get_eia_shield_status() -> Dict[str, Any]:
@@ -112,8 +155,11 @@ def get_eia_shield_status() -> Dict[str, Any]:
 @app.post("/api/trigger-pulse")
 def trigger_pulse() -> Dict[str, Any]:
     """Forces an instant scan and dispatches test alert to NTFY."""
+    sched = get_scheduler()
+    if sched is None:
+        raise HTTPException(status_code=503, detail=f"Scheduler unavailable: {_scheduler_init_error}")
     logger.info("Manual test pulse requested via API")
-    scan = scheduler.run_full_scan()
+    scan = sched.run_full_scan()
     # Trigger one forced alert for the highest scoring commodity
     best_sym = None
     best_score = -1
@@ -123,7 +169,7 @@ def trigger_pulse() -> Dict[str, Any]:
             best_sym = sym
             
     if best_sym:
-        scheduler.ntfy.send_breakout_alert(scan["commodities"][best_sym], force=True)
+        sched.ntfy.send_breakout_alert(scan["commodities"][best_sym], force=True)
         
     return {
         "status": "SUCCESS",

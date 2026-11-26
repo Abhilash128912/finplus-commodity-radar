@@ -113,6 +113,7 @@ class INDMoneyCommodityFeed:
             return self._quote_cache
 
         formatted = {}
+        refreshed_once = False
 
         for symbol, meta in ACTIVE_MCX_CONTRACTS.items():
             scrip = meta["scrip_code"]
@@ -120,9 +121,21 @@ class INDMoneyCommodityFeed:
             
             try:
                 resp = requests.get(url, headers=headers, timeout=2.0)
+                if resp.status_code in (401, 403) and not refreshed_once:
+                    refreshed_once = True
+                    logger.warning(f"INDstocks quote HTTP {resp.status_code}. Refreshing token once and retrying...")
+                    try:
+                        self.auth_client.force_refresh_token()
+                        headers = self.auth_client.get_auth_headers()
+                        resp = requests.get(url, headers=headers, timeout=2.0)
+                    except Exception as ref_err:
+                        logger.warning(f"Token refresh failed ({ref_err}). Setting 120s cooldown and falling back.")
+                        self._broker_cooldown_until = time.time() + 120
+                        break
+
                 if resp.status_code in (401, 403, 429):
                     logger.warning(f"INDstocks quote HTTP {resp.status_code}. Setting 120s cooldown and falling back.")
-                    self._broker_cooldown_until = now + 120
+                    self._broker_cooldown_until = time.time() + 120
                     break
 
                 if resp.status_code == 200:
@@ -178,17 +191,17 @@ class INDMoneyCommodityFeed:
 
         # Clean symbol matching (e.g. CRUDEOILM or NATGASMINI)
         df = self._instruments_df
-        sub = df[(df['SYMBOL_NAME'] == symbol) & (df['INSTRUMENT_NAME'] == 'OPTFUT') & (df['OPTION_TYPE'] == option_type)]
+        sub = df[(df['SYMBOL_NAME'] == symbol) & (df['INSTRUMENT_NAME'] == 'OPTFUT') & (df['OPTION_TYPE'] == option_type)].copy()
         if sub.empty:
             # Fallback to base commodity (e.g. NATURALGAS if NATGASMINI options share root)
             base_sym = "NATURALGAS" if "NATGAS" in symbol else ("CRUDEOIL" if "CRUDE" in symbol else symbol)
-            sub = df[(df['SYMBOL_NAME'] == base_sym) & (df['INSTRUMENT_NAME'] == 'OPTFUT') & (df['OPTION_TYPE'] == option_type)]
+            sub = df[(df['SYMBOL_NAME'] == base_sym) & (df['INSTRUMENT_NAME'] == 'OPTFUT') & (df['OPTION_TYPE'] == option_type)].copy()
             
         if sub.empty:
             return None
 
         # Find closest strike
-        sub['strike_diff'] = (sub['STRIKE_PRICE'] - atm_strike).abs()
+        sub.loc[:, 'strike_diff'] = (sub['STRIKE_PRICE'] - atm_strike).abs()
         nearest = sub.sort_values(by=['strike_diff', 'EXPIRY_DATE']).iloc[0]
         
         return {

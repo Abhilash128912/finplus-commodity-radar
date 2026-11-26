@@ -567,57 +567,61 @@
     if (airLink) airLink.href = isCloud ? 'https://finplus-index-breadth.onrender.com' : 'http://127.0.0.1:8000';
     if (stockLink) stockLink.href = isCloud ? 'https://finplus-stock-scanner.onrender.com' : 'http://127.0.0.1:8001';
 
-    async function loadData() {
+    function applyScanData(data) {
+      if (!data) return;
       const gDot = document.getElementById('gateway-dot');
       const gText = document.getElementById('gateway-text');
+
+      if (gDot) gDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot';
+      if (gText) gText.textContent = 'GATEWAY: ONLINE';
+      
+      // Update Live IST Clock & UTC
+      if (data.timestamp_ist) {
+        document.getElementById('live-ist-clock').textContent = data.timestamp_ist;
+      }
+
+      // Update Session Status
+      const session = data.session || {};
+      const sessionPill = document.getElementById('exchange-session-pill');
+      const sessionText = document.getElementById('session-status-text');
+      
+      sessionText.textContent = session.phase_label || "MCX ACTIVE";
+      sessionPill.className = `text-xs mono font-bold px-3 py-1.5 rounded-xl border ${session.badge_class || 'bg-slate-800 text-slate-400 border-slate-700'}`;
+
+      // Update EIA Shields
+      const crudeData = data.commodities?.CRUDEOILM;
+      const natgasData = data.commodities?.NATGASMINI;
+      const goldData = data.commodities?.GOLDPETAL;
+
+      if (crudeData?.eia_info) {
+        const cEia = crudeData.eia_info;
+        document.getElementById('crude-eia-text').textContent = cEia.status === 'SHIELD_ACTIVE' ? '🚨 SHIELD ACTIVE' : (cEia.status === 'UPCOMING' ? '⚠️ Due Soon' : 'Clear');
+        document.getElementById('crude-eia-pill').className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border ${cEia.badge_class || 'border-slate-800'}`;
+      }
+
+      if (natgasData?.eia_info) {
+        const nEia = natgasData.eia_info;
+        document.getElementById('natgas-eia-text').textContent = nEia.status === 'SHIELD_ACTIVE' ? '🚨 SHIELD ACTIVE' : (nEia.status === 'UPCOMING' ? '⚠️ Due Soon' : 'Clear');
+        document.getElementById('natgas-eia-pill').className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border ${nEia.badge_class || 'border-slate-800'}`;
+      }
+
+      // Render Top Priority Hero
+      if (data.priority_trade) {
+        renderPriorityHero(data.priority_trade);
+      }
+
+      // Render Individual Commodity Cards
+      renderAssetCard('crude', crudeData);
+      renderAssetCard('natgas', natgasData);
+      renderAssetCard('gold', goldData);
+    }
+
+    async function loadData() {
       try {
         const res = await fetch('/api/scan');
         if (!res.ok) throw new Error("API network error: " + res.status);
         const data = await res.json();
-        
-        if (gDot) gDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot';
-        if (gText) gText.textContent = 'GATEWAY: ONLINE';
-        
-        // Update Live IST Clock & UTC
-        if (data.timestamp_ist) {
-          document.getElementById('live-ist-clock').textContent = data.timestamp_ist;
-        }
-
-        // Update Session Status
-        const session = data.session || {};
-        const sessionPill = document.getElementById('exchange-session-pill');
-        const sessionText = document.getElementById('session-status-text');
-        
-        sessionText.textContent = session.phase_label || "MCX ACTIVE";
-        sessionPill.className = `text-xs mono font-bold px-3 py-1.5 rounded-xl border ${session.badge_class || 'bg-slate-800 text-slate-400 border-slate-700'}`;
-
-        // Update EIA Shields
-        const crudeData = data.commodities?.CRUDEOILM;
-        const natgasData = data.commodities?.NATGASMINI;
-        const goldData = data.commodities?.GOLDPETAL;
-
-        if (crudeData?.eia_info) {
-          const cEia = crudeData.eia_info;
-          document.getElementById('crude-eia-text').textContent = cEia.status === 'SHIELD_ACTIVE' ? '🚨 SHIELD ACTIVE' : (cEia.status === 'UPCOMING' ? '⚠️ Due Soon' : 'Clear');
-          document.getElementById('crude-eia-pill').className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border ${cEia.badge_class || 'border-slate-800'}`;
-        }
-
-        if (natgasData?.eia_info) {
-          const nEia = natgasData.eia_info;
-          document.getElementById('natgas-eia-text').textContent = nEia.status === 'SHIELD_ACTIVE' ? '🚨 SHIELD ACTIVE' : (nEia.status === 'UPCOMING' ? '⚠️ Due Soon' : 'Clear');
-          document.getElementById('natgas-eia-pill').className = `flex items-center gap-2 px-3 py-1.5 rounded-xl border ${nEia.badge_class || 'border-slate-800'}`;
-        }
-
-        // Render Top Priority Hero
-        if (data.priority_trade) {
-          renderPriorityHero(data.priority_trade);
-        }
-
-        // Render Individual Commodity Cards
-        renderAssetCard('crude', crudeData);
-        renderAssetCard('natgas', natgasData);
-        renderAssetCard('gold', goldData);
-
+        applyScanData(data);
       } catch (err) {
         console.error("Error loading scan data:", err);
         const gDot = document.getElementById('gateway-dot');
@@ -632,26 +636,28 @@
       if (!p || !p.symbol) return;
 
       document.getElementById('priority-asset-name').textContent = p.display_name || p.symbol;
-      document.getElementById('priority-asset-price').textContent = `₹${p.ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      document.getElementById('priority-asset-price').textContent = p.ltp != null ? `₹${Number(p.ltp).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '₹--';
       document.getElementById('priority-lot-unit').textContent = p.lot_unit || '--';
       
       const sPill = document.getElementById('priority-status-pill');
-      sPill.textContent = p.priority_status || 'TOP WATCH';
-      if (p.priority_status.includes("ACTIVE")) {
+      const pStatus = p.priority_status || 'TOP WATCH';
+      sPill.textContent = pStatus;
+      if (pStatus.includes("ACTIVE")) {
         sPill.className = "text-xs mono font-bold px-2.5 py-1 rounded-xl border bg-emerald-950 text-emerald-300 border-emerald-500/50 animate-pulse";
       } else {
         sPill.className = "text-xs mono font-bold px-2.5 py-1 rounded-xl border bg-slate-900 text-amber-300 border-amber-500/30";
       }
 
       document.getElementById('priority-advice').textContent = p.reason || '--';
-      document.getElementById('priority-score').textContent = `${p.confluence_score} / 100`;
+      document.getElementById('priority-score').textContent = `${p.confluence_score ?? '--'} / 100`;
 
       // Futures Directive
       const futBadge = document.getElementById('priority-futures-badge');
-      futBadge.textContent = p.futures_directive || 'STANDBY';
-      if (p.futures_directive.includes("BUY")) {
+      const futDir = p.futures_directive || 'STANDBY';
+      futBadge.textContent = futDir;
+      if (futDir.includes("BUY")) {
         futBadge.className = "text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center bg-emerald-950 border border-emerald-500/60 text-emerald-300 animate-pulse";
-      } else if (p.futures_directive.includes("SELL")) {
+      } else if (futDir.includes("SELL")) {
         futBadge.className = "text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center bg-rose-950 border border-rose-500/60 text-rose-300 animate-pulse";
       } else {
         futBadge.className = "text-sm font-extrabold mono py-1.5 px-2.5 rounded-xl text-center bg-slate-950 border border-slate-800 text-slate-400";
@@ -666,26 +672,26 @@
       document.getElementById('priority-option-sub').textContent = opt.advice || 'Wait for confirmed breakout';
 
       // Execution Plan
-      document.getElementById('priority-entry').textContent = p.entry_trigger ? `₹${p.entry_trigger.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
-      document.getElementById('priority-sl').textContent = p.stop_loss ? `₹${p.stop_loss.toLocaleString('en-IN', {minimumFractionDigits: 2})} (-₹${p.risk_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
-      document.getElementById('priority-t1').textContent = p.target_1 ? `₹${p.target_1.toLocaleString('en-IN', {minimumFractionDigits: 2})} (+₹${p.gain_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
-      document.getElementById('priority-t2').textContent = p.target_2 ? `₹${p.target_2.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+      document.getElementById('priority-entry').textContent = p.entry_trigger != null ? `₹${Number(p.entry_trigger).toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+      document.getElementById('priority-sl').textContent = p.stop_loss != null ? `₹${Number(p.stop_loss).toLocaleString('en-IN', {minimumFractionDigits: 2})} (-₹${Number(p.risk_per_lot_inr ?? 0).toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById('priority-t1').textContent = p.target_1 != null ? `₹${Number(p.target_1).toLocaleString('en-IN', {minimumFractionDigits: 2})} (+₹${Number(p.gain_per_lot_inr ?? 0).toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById('priority-t2').textContent = p.target_2 != null ? `₹${Number(p.target_2).toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
     }
 
     function renderAssetCard(prefix, item) {
       if (!item) return;
 
       // Price & Move
-      document.getElementById(`${prefix}-price`).textContent = `₹${item.ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      document.getElementById(`${prefix}-price`).textContent = item.ltp != null ? `₹${Number(item.ltp).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '₹--';
       
       const moveEl = document.getElementById(`${prefix}-move`);
-      const isUp = item.ltp >= item.box_mid;
-      moveEl.textContent = `${isUp ? '+' : ''}${item.box_width_pct}% Band`;
+      const isUp = (item.ltp ?? 0) >= (item.box_mid ?? 0);
+      moveEl.textContent = `${isUp ? '+' : ''}${item.box_width_pct ?? '--'}% Band`;
       moveEl.className = `text-sm font-bold mono ${isUp ? 'text-emerald-400' : 'text-slate-400'}`;
 
       // Directive Badge (Futures)
       const badge = document.getElementById(`${prefix}-directive-badge`);
-      const dir = item.directive;
+      const dir = item.directive || 'STANDBY';
       if (dir.includes("BUY")) {
         badge.className = "my-3 py-2 px-3 rounded-xl text-center font-mono font-bold text-xs tracking-wider bg-emerald-950 border border-emerald-500/60 text-emerald-300 animate-pulse";
         badge.innerHTML = `🟢 FUTURES: ${dir}`;
@@ -708,8 +714,8 @@
       optBadge.className = `font-bold py-1.5 px-2 rounded-lg text-center text-xs border ${opt.badge_class || 'bg-slate-900 border-slate-800 text-slate-400'}`;
 
       // Confluence Score
-      document.getElementById(`${prefix}-score`).textContent = `${item.confluence_score} / 100`;
-      document.getElementById(`${prefix}-score-bar`).style.width = `${item.confluence_score}%`;
+      document.getElementById(`${prefix}-score`).textContent = `${item.confluence_score ?? '--'} / 100`;
+      document.getElementById(`${prefix}-score-bar`).style.width = `${item.confluence_score ?? 0}%`;
       
       const bd = item.score_breakdown || {};
       document.getElementById(`${prefix}-pts-r`).textContent = bd.compression_pts ?? '--';
@@ -718,23 +724,33 @@
       document.getElementById(`${prefix}-pts-s`).textContent = bd.session_pts ?? '--';
 
       // Levels
-      document.getElementById(`${prefix}-box`).textContent = `₹${item.box_bottom.toLocaleString('en-IN')} - ₹${item.box_top.toLocaleString('en-IN')}`;
-      document.getElementById(`${prefix}-emas`).textContent = `₹${item.ema20.toLocaleString('en-IN')} / ₹${item.ema50.toLocaleString('en-IN')}`;
-      document.getElementById(`${prefix}-vol`).textContent = `${item.vol_ratio}x Avg`;
+      const boxBottom = item.box_bottom != null ? `₹${Number(item.box_bottom).toLocaleString('en-IN')}` : '₹--';
+      const boxTop = item.box_top != null ? `₹${Number(item.box_top).toLocaleString('en-IN')}` : '₹--';
+      document.getElementById(`${prefix}-box`).textContent = `${boxBottom} - ${boxTop}`;
+      const ema20 = item.ema20 != null ? `₹${Number(item.ema20).toLocaleString('en-IN')}` : '₹--';
+      const ema50 = item.ema50 != null ? `₹${Number(item.ema50).toLocaleString('en-IN')}` : '₹--';
+      document.getElementById(`${prefix}-emas`).textContent = `${ema20} / ${ema50}`;
+      document.getElementById(`${prefix}-vol`).textContent = `${item.vol_ratio ?? '--'}x Avg`;
 
       // Execution Plan
-      document.getElementById(`${prefix}-entry`).textContent = item.entry_price ? `₹${item.entry_price.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
-      document.getElementById(`${prefix}-sl`).textContent = item.stop_loss ? `₹${item.stop_loss.toLocaleString('en-IN', {minimumFractionDigits: 2})} (-₹${item.risk_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
-      document.getElementById(`${prefix}-t1`).textContent = item.target_1 ? `₹${item.target_1.toLocaleString('en-IN', {minimumFractionDigits: 2})} (+₹${item.gain_per_lot_inr.toLocaleString('en-IN')}/lot)` : '--';
-      document.getElementById(`${prefix}-t2`).textContent = item.target_2 ? `₹${item.target_2.toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+      document.getElementById(`${prefix}-entry`).textContent = item.entry_price != null ? `₹${Number(item.entry_price).toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
+      document.getElementById(`${prefix}-sl`).textContent = item.stop_loss != null ? `₹${Number(item.stop_loss).toLocaleString('en-IN', {minimumFractionDigits: 2})} (-₹${Number(item.risk_per_lot_inr ?? 0).toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById(`${prefix}-t1`).textContent = item.target_1 != null ? `₹${Number(item.target_1).toLocaleString('en-IN', {minimumFractionDigits: 2})} (+₹${Number(item.gain_per_lot_inr ?? 0).toLocaleString('en-IN')}/lot)` : '--';
+      document.getElementById(`${prefix}-t2`).textContent = item.target_2 != null ? `₹${Number(item.target_2).toLocaleString('en-IN', {minimumFractionDigits: 2})}` : '--';
 
       // Reason
-      document.getElementById(`${prefix}-reason`).textContent = item.reason;
+      document.getElementById(`${prefix}-reason`).textContent = item.reason || '--';
     }
 
     async function triggerScan() {
-      await fetch('/api/scan?force=true');
-      await loadData();
+      try {
+        const res = await fetch('/api/scan?force=true');
+        if (!res.ok) throw new Error("API network error: " + res.status);
+        const data = await res.json();
+        applyScanData(data);
+      } catch (err) {
+        console.error("Error triggering forced scan:", err);
+      }
     }
 
     async function triggerTestPulse() {

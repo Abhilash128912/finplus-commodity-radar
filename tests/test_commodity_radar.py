@@ -90,7 +90,7 @@ def test_commodity_luxalgo_engine():
         'Close': closes,
         'Volume': np.full(n, 1000)
     })
-    df['Volume'].iloc[-1] = 2000 # volume expansion
+    df.loc[df.index[-1], 'Volume'] = 2000 # volume expansion
     
     res = engine.analyze_commodity("CRUDEOILM", df)
     assert res["symbol"] == "CRUDEOILM"

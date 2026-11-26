@@ -7,6 +7,7 @@ Target: https://ntfy.sh/Finplus-Delta, https://ntfy.sh/Finplus-Commodity
 
 import os
 import time
+import threading
 import requests
 from typing import Dict, Any, Optional, List
 from config.settings import NTFY_SERVER
@@ -31,9 +32,14 @@ class CommodityNTFYDispatcher:
 
         self.server = server.rstrip("/")
         self._last_alert_time: Dict[str, float] = {}
+        self._alert_lock = threading.Lock()
 
     def _send_to_ntfy(self, topic: str, message: str, headers: Dict[str, str], timeout: int = 5) -> bool:
         """Central shared send function for all NTFY dispatches in Commodity Radar."""
+        # Strict Test Isolation: Suppress all alerts in test environment
+        if os.getenv("FINPLUS_ENV") == "test" or os.getenv("FINPLUS_ENVIRONMENT") == "test":
+            return False
+
         is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
         if not is_render:
             now = time.time()
@@ -73,8 +79,9 @@ class CommodityNTFYDispatcher:
             
         now = time.time()
         # 30-minute anti-spam per symbol
-        if not force and symbol in self._last_alert_time:
-            if (now - self._last_alert_time[symbol]) < 1800:
+        with self._alert_lock:
+            last_ts = self._last_alert_time.get(symbol)
+            if not force and last_ts is not None and (now - last_ts) < 1800:
                 logger.info(f"Skipping NTFY alert for {symbol} (rate-limited, sent < 30m ago)")
                 return False
 
@@ -128,7 +135,8 @@ class CommodityNTFYDispatcher:
         any_success = False
         for topic in self.topics:
             if self._send_to_ntfy(topic, message, headers, timeout=5):
-                self._last_alert_time[symbol] = now
+                with self._alert_lock:
+                    self._last_alert_time[symbol] = now
                 any_success = True
                 
         return any_success

@@ -73,7 +73,7 @@
   <!-- Bottom clock -->
   <div class="flex items-center justify-between pt-1 border-t border-slate-800 text-[10px] mono text-slate-500">
     <span id="hud-clock">--:--:-- IST</span>
-    <a href="http://127.0.0.1:8002" target="_blank" class="text-amber-400 hover:underline">Full Cockpit ↗</a>
+    <a href="/" target="_blank" class="text-amber-400 hover:underline">Full Cockpit ↗</a>
   </div>
 
   <script>
@@ -92,14 +92,15 @@
 
         const updateItem = (id, obj) => {
           if (!obj) return;
-          document.getElementById(`${id}-hud-price`).textContent = `₹${obj.ltp.toLocaleString('en-IN', {minimumFractionDigits: 1, maximumFractionDigits: 1})}`;
+          document.getElementById(`${id}-hud-price`).textContent = obj.ltp != null ? `₹${Number(obj.ltp).toLocaleString('en-IN', {minimumFractionDigits: 1, maximumFractionDigits: 1})}` : '₹--';
           const actionEl = document.getElementById(`${id}-hud-action`);
           const opt = obj.option_directive || {};
+          const directive = obj.directive || '';
           
-          if (obj.directive.includes("BUY")) {
+          if (directive.includes("BUY")) {
             actionEl.textContent = opt.recommended_action ? opt.recommended_action : "BUY LONG";
             actionEl.className = "text-[10px] font-bold text-emerald-400";
-          } else if (obj.directive.includes("SELL")) {
+          } else if (directive.includes("SELL")) {
             actionEl.textContent = opt.recommended_action ? opt.recommended_action : "SELL SHORT";
             actionEl.className = "text-[10px] font-bold text-rose-400";
           } else {

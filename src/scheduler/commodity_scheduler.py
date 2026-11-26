@@ -29,8 +29,14 @@ class CommodityScheduler:
         
         self.latest_scan_results: Dict[str, Any] = {}
         self.last_scan_time_utc: str = ""
+        self._lock = threading.Lock()
         self.is_running = False
         self._thread: threading.Thread = None
+
+    def get_latest_scan_results(self) -> Dict[str, Any]:
+        """Thread-safe accessor for the latest scan results."""
+        with self._lock:
+            return dict(self.latest_scan_results) if self.latest_scan_results else {}
 
     def run_full_scan(self) -> Dict[str, Any]:
         """
@@ -93,16 +99,18 @@ class CommodityScheduler:
         # Select the single #1 Best Commodity to Trade right now
         priority_trade = CommodityPriorityEngine.select_priority_commodity(results)
 
-        self.latest_scan_results = {
+        scan_payload = {
             "timestamp_utc": get_utc_iso(),
             "timestamp_ist": get_ist_now().strftime("%I:%M:%S %p IST"),
             "session": session_info,
             "priority_trade": priority_trade,
             "commodities": results
         }
-        self.last_scan_time_utc = self.latest_scan_results["timestamp_utc"]
+        with self._lock:
+            self.latest_scan_results = scan_payload
+            self.last_scan_time_utc = scan_payload["timestamp_utc"]
         logger.info("Scan completed successfully across all 3 commodity derivatives.")
-        return self.latest_scan_results
+        return scan_payload
 
     def start_background_loop(self, interval_seconds: int = 60):
         """Starts background monitoring loop."""

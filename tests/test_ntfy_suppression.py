@@ -10,6 +10,8 @@ def test_ntfy_suppression_when_not_on_render(monkeypatch, caplog):
     - Logs 'NTFY suppressed (not on Render)' at most once per hour.
     """
     import logging
+    monkeypatch.delenv("FINPLUS_ENV", raising=False)
+    monkeypatch.delenv("FINPLUS_ENVIRONMENT", raising=False)
     monkeypatch.delenv("RENDER", raising=False)
     monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
 
@@ -31,6 +33,8 @@ def test_ntfy_suppression_when_not_on_render(monkeypatch, caplog):
 
 def test_ntfy_allowed_when_on_render(monkeypatch):
     """Verifies that NTFY dispatches normally when RENDER is set."""
+    monkeypatch.delenv("FINPLUS_ENV", raising=False)
+    monkeypatch.delenv("FINPLUS_ENVIRONMENT", raising=False)
     monkeypatch.setenv("RENDER", "true")
     dispatcher = CommodityNTFYDispatcher()
 
@@ -39,3 +43,4 @@ def test_ntfy_allowed_when_on_render(monkeypatch):
         res = dispatcher._send_to_ntfy("Finplus-Commodity", "Body Cloud", {"Title": "Test Cloud Alert"})
         assert res is True
         assert mock_post.call_count == 1
+
